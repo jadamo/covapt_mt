@@ -13,13 +13,11 @@ import itertools
 from covapt_mt.config import covapt_data_dir
 from covapt_mt import T0
 
-# Organize everything into a class to more clearly specify things like
-# what k range and binning we're using
 class covariance_model():
     """
     Class that defines the EFTofLSS model used to calculate predictions
     for the galaxy power spectrum multipole covariance matrices.
-    Said model is configured to predict data from the BOSS DR12 galaxy catalog,
+    Said model is cureently being upgraded to handle multi-tracer covariances for SPHEREx,
     and draws heavily from CovaPT (https://github.com/JayWadekar/CovaPT)
     
     """
@@ -38,10 +36,10 @@ class covariance_model():
         assert key in ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"], \
         'ERROR: invalid key specified! Should be one of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]'
 
-        self.z = z
         self.set_k_bins(k)
         self.set_number_densities(alpha, n_galaxy)
-        self._load_window_functions(key, window_dir)
+        self._load_G_window_functions(key, window_dir)
+        #self._load_NG_window_functions(key, window_dir)
 
         self.set_survey_pars(0.02) # <- this is for NG covariance only!
         self.pk_galaxy = None
@@ -50,13 +48,10 @@ class covariance_model():
         self.vec_Z12Multipoles = np.vectorize(self.Z12Multipoles)
         self.vec_trisp = np.vectorize(self.trisp)
 
-    #-------------------------------------------------------------------
-    def _load_window_functions(self, key:str, window_dir:str):
-        """Loads window power spectra and gaussian window functions from file"""
-        # Loading window power spectra calculated from the survey random catalog (code will be uploaded in a different notebook)
-        # These are needed to calculate the sigma^2 terms
-        # Columns are k P00 P02 P04 P22 P24 P44 | P00 P02 P04 P22 P24 P44 | P00 P02 P04 P20 P22 P24 P40 P42 P44
-        # First section of these is for W22, second for W10 and third for W22xW10
+    # NOTE: This function is here for completeness, but is NOT necesary for making
+    # multi-tracer covariances
+    def _load_NG_window_functions(self, key:str, window_dir:str):
+
         try:
             data=np.load(window_dir+'WindowPowers_'+key+'.npy')
             self.kwin = data[0]
@@ -68,6 +63,14 @@ class covariance_model():
             self.kwin = self.powW22[:,0]
             self.powW10=np.loadtxt(window_dir+'WindowPower_W10_'+key+'.dat')
             self.powW22x10=np.loadtxt(window_dir+'WindowPower_W22xW10_'+key+'.dat')
+
+    #-------------------------------------------------------------------
+    def _load_G_window_functions(self, key:str, window_dir:str):
+        """Loads gaussian window functions from file"""
+        # Loading window power spectra calculated from the survey random catalog (code will be uploaded in a different notebook)
+        # These are needed to calculate the sigma^2 terms
+        # Columns are k P00 P02 P04 P22 P24 P44 | P00 P02 P04 P22 P24 P44 | P00 P02 P04 P20 P22 P24 P40 P42 P44
+        # First section of these is for W22, second for W10 and third for W22xW10
 
         #Using the window kernels calculated from the survey random catalog as input
         window_file = window_dir+'Wij_k'+str(self.num_kbins)+'_'+key+'.npy'
@@ -424,203 +427,203 @@ class covariance_model():
         else: return covMat, Pk_galaxy
 
     #-------------------------------------------------------------------
-    def get_non_gaussian_covariance(self, params, seperate_SSC=False):
-        """Returns the Non-Gaussian portion of the covariance matrix
+    # def get_non_gaussian_covariance(self, params, seperate_SSC=False):
+    #     """Returns the Non-Gaussian portion of the covariance matrix
         
-        This function specifically calculates both covariance from the regular
-        trispectrum (T0), and Super-Sample Covariance (SSC). Currently all third-order
-        bias terms are set to 0. Due to the trispectrum calculations, this process
-        is compuationally expensive (~minutes)
+    #     This function specifically calculates both covariance from the regular
+    #     trispectrum (T0), and Super-Sample Covariance (SSC). Currently all third-order
+    #     bias terms are set to 0. Due to the trispectrum calculations, this process
+    #     is compuationally expensive (~minutes)
 
-        Args:
-            params: np array of cosmology parameters. Should be ordered  \
-            like [H0, omch2, As, b1, b2, bG2]. Recommended to use the same object \
-            that is passed to get_gaussian_covariance
-        """
-        # Cosmology parameters
-        H0, omch2, As = params[0], params[1], params[2]
-        ombh2 = self.ombh2_planck
-        ns = self.ns_planck
+    #     Args:
+    #         params: np array of cosmology parameters. Should be ordered  \
+    #         like [H0, omch2, As, b1, b2, bG2]. Recommended to use the same object \
+    #         that is passed to get_gaussian_covariance
+    #     """
+    #     # Cosmology parameters
+    #     H0, omch2, As = params[0], params[1], params[2]
+    #     ombh2 = self.ombh2_planck
+    #     ns = self.ns_planck
 
-        # local bias terms
-        b1 = params[3]
-        b2 = params[4]
-        b3 = 0.
+    #     # local bias terms
+    #     b1 = params[3]
+    #     b2 = params[4]
+    #     b3 = 0.
 
-        # non-local bias terms
-        g2 = params[5] #<- bG2
-        g3 = 0.  #<- bG3 (third order?)
-        g2x = 0. #<- bdG2 (third order)
-        g21 = 0. #<- bGamma3*
+    #     # non-local bias terms
+    #     g2 = params[5] #<- bG2
+    #     g3 = 0.  #<- bG3 (third order?)
+    #     g2x = 0. #<- bdG2 (third order)
+    #     g21 = 0. #<- bGamma3*
 
-        Omega_m = (omch2 + ombh2 + 0.00064) / (H0/100)**2
+    #     Omega_m = (omch2 + ombh2 + 0.00064) / (H0/100)**2
         
-        # Below are expressions for non-local bias (g_i) from local lagrangian approximation
-        # and non-linear bias (b_i) from peak-background split fit of 
-        # Lazyeras et al. 2016 (rescaled using Appendix C.2 of arXiv:1812.03208),
-        # which could used if those parameters aren't constrained.
-        # g2 = -2/7*(b1 - 1)
-        # g3 = 11/63*(b1 - 1)
-        # #b2 = 0.412 - 2.143*b1 + 0.929*b1**2 + 0.008*b1**3 + 4/3*g2 
-        # g2x = -2/7*b2
-        # g21 = -22/147*(b1 - 1)
-        # b3 = -1.028 + 7.646*b1 - 6.227*b1**2 + 0.912*b1**3 + 4*g2x - 4/3*g3 - 8/3*g21 - 32/21*g2
+    #     # Below are expressions for non-local bias (g_i) from local lagrangian approximation
+    #     # and non-linear bias (b_i) from peak-background split fit of 
+    #     # Lazyeras et al. 2016 (rescaled using Appendix C.2 of arXiv:1812.03208),
+    #     # which could used if those parameters aren't constrained.
+    #     # g2 = -2/7*(b1 - 1)
+    #     # g3 = 11/63*(b1 - 1)
+    #     # #b2 = 0.412 - 2.143*b1 + 0.929*b1**2 + 0.008*b1**3 + 4/3*g2 
+    #     # g2x = -2/7*b2
+    #     # g21 = -22/147*(b1 - 1)
+    #     # b3 = -1.028 + 7.646*b1 - 6.227*b1**2 + 0.912*b1**3 + 4*g2x - 4/3*g3 - 8/3*g21 - 32/21*g2
         
-        # ---Growth Factor---
-        be = self.fgrowth(self.z, Omega_m)/b1; #beta = f/b1, zero for real space
+    #     # ---Growth Factor---
+    #     be = self.fgrowth(self.z, Omega_m)/b1; #beta = f/b1, zero for real space
 
-        # initializing bias parameters for trispectrum
-        T0.InitParameters([b1,be,g2,b2,g3,g2x,g21,b3])
+    #     # initializing bias parameters for trispectrum
+    #     T0.InitParameters([b1,be,g2,b2,g3,g2x,g21,b3])
 
-        # Get initial power spectrum
-        pdata = self.Pk_lin_CLASS(H0, omch2, ombh2, As, ns)
-        Plin=InterpolatedUnivariateSpline(pdata[:,0], self.Dz(self.z, Omega_m)**2*b1**2*pdata[:,1])
+    #     # Get initial power spectrum
+    #     pdata = self.Pk_lin_CLASS(H0, omch2, ombh2, As, ns)
+    #     Plin=InterpolatedUnivariateSpline(pdata[:,0], self.Dz(self.z, Omega_m)**2*b1**2*pdata[:,1])
 
-        # Get the derivative of the linear power spectrum
-        dlnPk=derivative(Plin,self.k,dx=1e-4)*self.k/Plin(self.k)
+    #     # Get the derivative of the linear power spectrum
+    #     dlnPk=derivative(Plin,self.k,dx=1e-4)*self.k/Plin(self.k)
         
-        # Kaiser terms
-        rsd=np.zeros(5)
-        rsd[0]=1 + (2*be)/3 + be**2/5
-        rsd[2]=(4*be)/3 + (4*be**2)/7
-        rsd[4]=(8*be**2)/35
+    #     # Kaiser terms
+    #     rsd=np.zeros(5)
+    #     rsd[0]=1 + (2*be)/3 + be**2/5
+    #     rsd[2]=(4*be)/3 + (4*be**2)/7
+    #     rsd[4]=(8*be**2)/35
         
-        # Calculating the RMS fluctuations of supersurvey modes 
-        #(e.g., sigma22Sq which was defined in Eq. (33) and later calculated in Eq.(65)
-        [temp,temp2]=np.zeros((2,6)); temp3 = np.zeros(9)
-        for i in range(9):
-            #Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW22x10[:,1+i])
-            Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW22x10[i])
-            temp3[i]=quad(lambda q: q**2*Plin(q)*Pwin(q)/2/pi**2, 0, self.kwin[-1], limit=100)[0]
+    #     # Calculating the RMS fluctuations of supersurvey modes 
+    #     #(e.g., sigma22Sq which was defined in Eq. (33) and later calculated in Eq.(65)
+    #     [temp,temp2]=np.zeros((2,6)); temp3 = np.zeros(9)
+    #     for i in range(9):
+    #         #Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW22x10[:,1+i])
+    #         Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW22x10[i])
+    #         temp3[i]=quad(lambda q: q**2*Plin(q)*Pwin(q)/2/pi**2, 0, self.kwin[-1], limit=100)[0]
 
-            if(i<6):
-                #Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW22[:,1+i])
-                Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW22[i])
-                temp[i]=quad(lambda q: q**2*Plin(q)*Pwin(q)/2/pi**2, 0, self.kwin[-1], limit=100)[0]
-                #Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW10[:,1+i])
-                Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW10[i])
-                temp2[i]=quad(lambda q: q**2*Plin(q)*Pwin(q)/2/pi**2, 0, self.kwin[-1], limit=100)[0]
-            else:
-                continue
+    #         if(i<6):
+    #             #Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW22[:,1+i])
+    #             Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW22[i])
+    #             temp[i]=quad(lambda q: q**2*Plin(q)*Pwin(q)/2/pi**2, 0, self.kwin[-1], limit=100)[0]
+    #             #Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW10[:,1+i])
+    #             Pwin=InterpolatedUnivariateSpline(self.kwin, self.powW10[i])
+    #             temp2[i]=quad(lambda q: q**2*Plin(q)*Pwin(q)/2/pi**2, 0, self.kwin[-1], limit=100)[0]
+    #         else:
+    #             continue
         
-        sigma22Sq  = self.MatrixForm(temp)
-        sigma10Sq  = self.MatrixForm(temp2)
-        sigma22x10 = self.MatrixForm(temp3)
+    #     sigma22Sq  = self.MatrixForm(temp)
+    #     sigma10Sq  = self.MatrixForm(temp2)
+    #     sigma22x10 = self.MatrixForm(temp3)
     
-        # Calculate SSC covariance    
-        covaSSCmult=np.zeros((2*self.num_kbins,2*self.num_kbins))
-        covaSSCmult[:self.num_kbins,:self.num_kbins]=self.covaSSC(0,0, sigma22Sq, sigma10Sq, sigma22x10, rsd, be,b1,b2,g2, Plin, dlnPk)
-        covaSSCmult[self.num_kbins:,self.num_kbins:]=self.covaSSC(2,2, sigma22Sq, sigma10Sq, sigma22x10, rsd, be,b1,b2,g2, Plin, dlnPk)
-        covaSSCmult[:self.num_kbins,self.num_kbins:]=self.covaSSC(0,2, sigma22Sq, sigma10Sq, sigma22x10, rsd, be,b1,b2,g2, Plin, dlnPk); 
-        covaSSCmult[self.num_kbins:,:self.num_kbins]=np.transpose(covaSSCmult[:self.num_kbins,self.num_kbins:])
+    #     # Calculate SSC covariance    
+    #     covaSSCmult=np.zeros((2*self.num_kbins,2*self.num_kbins))
+    #     covaSSCmult[:self.num_kbins,:self.num_kbins]=self.covaSSC(0,0, sigma22Sq, sigma10Sq, sigma22x10, rsd, be,b1,b2,g2, Plin, dlnPk)
+    #     covaSSCmult[self.num_kbins:,self.num_kbins:]=self.covaSSC(2,2, sigma22Sq, sigma10Sq, sigma22x10, rsd, be,b1,b2,g2, Plin, dlnPk)
+    #     covaSSCmult[:self.num_kbins,self.num_kbins:]=self.covaSSC(0,2, sigma22Sq, sigma10Sq, sigma22x10, rsd, be,b1,b2,g2, Plin, dlnPk); 
+    #     covaSSCmult[self.num_kbins:,:self.num_kbins]=np.transpose(covaSSCmult[:self.num_kbins,self.num_kbins:])
 
-        # Calculate the Non-Gaussian multipole covariance
-        # Warning: the trispectrum takes a while to run
-        covaT0mult=np.zeros((2*self.num_kbins,2*self.num_kbins))
-        for i in range(len(self.k)):
-            covaT0mult[i,:self.num_kbins]=self.vec_trisp(0,0,self.k[i],self.k, Plin)
-            covaT0mult[i,self.num_kbins:]=self.vec_trisp(0,2,self.k[i],self.k, Plin)
-            covaT0mult[self.num_kbins+i,self.num_kbins:]=self.vec_trisp(2,2,self.k[i],self.k, Plin)
+    #     # Calculate the Non-Gaussian multipole covariance
+    #     # Warning: the trispectrum takes a while to run
+    #     covaT0mult=np.zeros((2*self.num_kbins,2*self.num_kbins))
+    #     for i in range(len(self.k)):
+    #         covaT0mult[i,:self.num_kbins]=self.vec_trisp(0,0,self.k[i],self.k, Plin)
+    #         covaT0mult[i,self.num_kbins:]=self.vec_trisp(0,2,self.k[i],self.k, Plin)
+    #         covaT0mult[self.num_kbins+i,self.num_kbins:]=self.vec_trisp(2,2,self.k[i],self.k, Plin)
 
-        covaT0mult[self.num_kbins:,:self.num_kbins]=np.transpose(covaT0mult[:self.num_kbins,self.num_kbins:])
+    #     covaT0mult[self.num_kbins:,:self.num_kbins]=np.transpose(covaT0mult[:self.num_kbins,self.num_kbins:])
 
-        #return covaNG
-        return covaSSCmult + covaT0mult
+    #     #return covaNG
+    #     return covaSSCmult + covaT0mult
 
-    #-------------------------------------------------------------------
-    def get_full_covariance(self, params, Pk_galaxy=[], seperate_terms=False):
-        """Returns the full analytic covariance matrix
+    # #-------------------------------------------------------------------
+    # def get_full_covariance(self, params, Pk_galaxy=[], seperate_terms=False):
+    #     """Returns the full analytic covariance matrix
 
-        This function sequencially calls get_gaussian_covariance() and 
-        get_non_gaussian_covariance()
+    #     This function sequencially calls get_gaussian_covariance() and 
+    #     get_non_gaussian_covariance()
 
-        Args:
-            params: np array of cosmology parameters. Should be ordered  \
-            like [H0, omch2, As, b1, b2, bG2, cs0, cs2, cbar, Pshot]
-            Pk_galaxy: Optional tuple of galaxy power spectrum multipoles [monopole, quadropole]. \
-            If empty, this function calculates it from the input params
-            seperate_terms: If True, return C_G and C_NG as seperate arrays. Default False
-        """
-        cov_G = self.get_gaussian_covariance(params, False, Pk_galaxy)
-        cov_NG = self.get_non_gaussian_covariance(params)
+    #     Args:
+    #         params: np array of cosmology parameters. Should be ordered  \
+    #         like [H0, omch2, As, b1, b2, bG2, cs0, cs2, cbar, Pshot]
+    #         Pk_galaxy: Optional tuple of galaxy power spectrum multipoles [monopole, quadropole]. \
+    #         If empty, this function calculates it from the input params
+    #         seperate_terms: If True, return C_G and C_NG as seperate arrays. Default False
+    #     """
+    #     cov_G = self.get_gaussian_covariance(params, False, Pk_galaxy)
+    #     cov_NG = self.get_non_gaussian_covariance(params)
 
-        if seperate_terms: return cov_G, cov_NG
-        else             : return cov_G + cov_NG
+    #     if seperate_terms: return cov_G, cov_NG
+    #     else             : return cov_G + cov_NG
     
-    def get_marginalized_covariance(self, params, C, window_dir=covapt_data_dir):
-        """Returns the marginalized covariance matrix as well as the convolved model vector
+    # def get_marginalized_covariance(self, params, C, window_dir=covapt_data_dir):
+    #     """Returns the marginalized covariance matrix as well as the convolved model vector
         
-        taken from Misha Ivanov's Montepython Likelihood 
-        )https://github.com/Michalychforever/lss_montepython)
+    #     taken from Misha Ivanov's Montepython Likelihood 
+    #     )https://github.com/Michalychforever/lss_montepython)
 
-        Args:
-            params: {np array} array of input cosmology parameters [h, omch2, As, b1, b2, bG2, cs0, cs2, cbar, Pshot]
-            C: {2D numpy array} Covariance matrix to marginalize
-            window_dir: location of window / wide angle functions. Default to the directory \
-            defined in config.py
-        Returns:
-            C_marg: Marginalized covariance matrix
-            model_vector: Power spectrum multipoles calculated during marginalization
-            Omega_m: (float) value for matter parameter Omega_m
-            sigma8: (float) value for the power spectrum normalization sigma8
-        """
+    #     Args:
+    #         params: {np array} array of input cosmology parameters [h, omch2, As, b1, b2, bG2, cs0, cs2, cbar, Pshot]
+    #         C: {2D numpy array} Covariance matrix to marginalize
+    #         window_dir: location of window / wide angle functions. Default to the directory \
+    #         defined in config.py
+    #     Returns:
+    #         C_marg: Marginalized covariance matrix
+    #         model_vector: Power spectrum multipoles calculated during marginalization
+    #         Omega_m: (float) value for matter parameter Omega_m
+    #         sigma8: (float) value for the power spectrum normalization sigma8
+    #     """
 
-        all_theory, theory0, theory2, theory4, fz, Omega_m, sigma8 = self.Pk_CLASS_PT(params, False)
-        norm = 1; Nmarg = 4
-        omit = 0; ksize = len(self.k)
-        if len(self.wmat) == 0:
-            self.wmat = np.loadtxt(window_dir+"W_ngc_z3.matrix", skiprows = 0)
-            self.mmat = np.loadtxt(window_dir+"M_ngc_z3.matrix", skiprows = 0)
+    #     all_theory, theory0, theory2, theory4, fz, Omega_m, sigma8 = self.Pk_CLASS_PT(params, False)
+    #     norm = 1; Nmarg = 4
+    #     omit = 0; ksize = len(self.k)
+    #     if len(self.wmat) == 0:
+    #         self.wmat = np.loadtxt(window_dir+"W_ngc_z3.matrix", skiprows = 0)
+    #         self.mmat = np.loadtxt(window_dir+"M_ngc_z3.matrix", skiprows = 0)
 
-        h    = params[0] / 100.
-        b1   = params[3]
-        css0sig = 30.
-        css2sig = 30.
-        b4sig = 500.
-        Pshotsig = 5000.
+    #     h    = params[0] / 100.
+    #     b1   = params[3]
+    #     css0sig = 30.
+    #     css2sig = 30.
+    #     b4sig = 500.
+    #     Pshotsig = 5000.
 
-        dtheory4_dcss0 = np.zeros_like(self.k_theory)
-        dtheory4_dcss2 = np.zeros_like(self.k_theory)
-        dtheory4_db4 = fz**2*self.k_theory**2*(norm**2*fz**2*48./143. + 48.*fz*b1*norm/77.+8.*b1**2/35.)*(35./8.)*all_theory[13]*h
-        dtheory4_dPshot = np.zeros_like(self.k_theory)
+    #     dtheory4_dcss0 = np.zeros_like(self.k_theory)
+    #     dtheory4_dcss2 = np.zeros_like(self.k_theory)
+    #     dtheory4_db4 = fz**2*self.k_theory**2*(norm**2*fz**2*48./143. + 48.*fz*b1*norm/77.+8.*b1**2/35.)*(35./8.)*all_theory[13]*h
+    #     dtheory4_dPshot = np.zeros_like(self.k_theory)
 
-        dtheory2_dcss0 = np.zeros_like(self.k_theory)
-        dtheory2_dcss2 = (2.*norm**2.*all_theory[12]/h**2.)*h**3.
-        dtheory2_db4 = fz**2.*self.k_theory**2.*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)*all_theory[13]*h
-        dtheory2_dPshot = np.zeros_like(self.k_theory)
+    #     dtheory2_dcss0 = np.zeros_like(self.k_theory)
+    #     dtheory2_dcss2 = (2.*norm**2.*all_theory[12]/h**2.)*h**3.
+    #     dtheory2_db4 = fz**2.*self.k_theory**2.*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)*all_theory[13]*h
+    #     dtheory2_dPshot = np.zeros_like(self.k_theory)
 
-        dtheory0_dcss0 = (2.*norm**2.*all_theory[11]/h**2.)*h**3.
-        dtheory0_dcss2 = np.zeros_like(self.k_theory)
-        dtheory0_db4 = fz**2.*self.k_theory**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h
-        dtheory0_dPshot = np.ones_like(self.k_theory)
+    #     dtheory0_dcss0 = (2.*norm**2.*all_theory[11]/h**2.)*h**3.
+    #     dtheory0_dcss2 = np.zeros_like(self.k_theory)
+    #     dtheory0_db4 = fz**2.*self.k_theory**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h
+    #     dtheory0_dPshot = np.ones_like(self.k_theory)
 
-        theory0vec = np.vstack([theory0,dtheory0_dcss0,dtheory0_dcss2,dtheory0_db4,dtheory0_dPshot])
-        theory2vec = np.vstack([theory2,dtheory2_dcss0,dtheory2_dcss2,dtheory2_db4,dtheory2_dPshot])
-        theory4vec = np.vstack([theory4,dtheory4_dcss0,dtheory4_dcss2,dtheory4_db4,dtheory4_dPshot])
+    #     theory0vec = np.vstack([theory0,dtheory0_dcss0,dtheory0_dcss2,dtheory0_db4,dtheory0_dPshot])
+    #     theory2vec = np.vstack([theory2,dtheory2_dcss0,dtheory2_dcss2,dtheory2_db4,dtheory2_dPshot])
+    #     theory4vec = np.vstack([theory4,dtheory4_dcss0,dtheory4_dcss2,dtheory4_db4,dtheory4_dPshot])
 
-        #PW = np.zeros((5*self.ksize1,Nmarg+1))
-        P0int = np.zeros((ksize,Nmarg+1))
-        P2int = np.zeros((ksize,Nmarg+1))
-        P4int = np.zeros((ksize,Nmarg+1))
+    #     #PW = np.zeros((5*self.ksize1,Nmarg+1))
+    #     P0int = np.zeros((ksize,Nmarg+1))
+    #     P2int = np.zeros((ksize,Nmarg+1))
+    #     P4int = np.zeros((ksize,Nmarg+1))
 
-        for i in range(Nmarg+1):
-                Pintvec = np.hstack([theory0vec[i,:],theory2vec[i,:],theory4vec[i,:]]) 
-                PW = np.matmul(self.wmat,np.matmul(self.mmat,Pintvec))
-                P0int[:,i] = np.asarray([PW[j] for j in range(omit,omit+ksize)]).T	
-                P2int[:,i] = np.asarray([PW[j] for j in range(80+omit,80+omit+ksize)]).T
-                #P4int[:,i] = np.asarray([PW[j] for j in range(160+omit,160+omit+self.ksize)]).T
+    #     for i in range(Nmarg+1):
+    #             Pintvec = np.hstack([theory0vec[i,:],theory2vec[i,:],theory4vec[i,:]]) 
+    #             PW = np.matmul(self.wmat,np.matmul(self.mmat,Pintvec))
+    #             P0int[:,i] = np.asarray([PW[j] for j in range(omit,omit+ksize)]).T	
+    #             P2int[:,i] = np.asarray([PW[j] for j in range(80+omit,80+omit+ksize)]).T
+    #             #P4int[:,i] = np.asarray([PW[j] for j in range(160+omit,160+omit+self.ksize)]).T
 
-        dcss0_stack = np.hstack([P0int[:,1],P2int[:,1]])#,P4int[:,1]])
-        dcss2_stack = np.hstack([P0int[:,2],P2int[:,2]])#,P4int[:,2]])
-        db4_stack = np.hstack([P0int[:,3],P2int[:,3]])#,P4int[:,4]])
-        dPshot_stack = np.hstack([P0int[:,4],P2int[:,4]])#,P4int[:,5]])
+    #     dcss0_stack = np.hstack([P0int[:,1],P2int[:,1]])#,P4int[:,1]])
+    #     dcss2_stack = np.hstack([P0int[:,2],P2int[:,2]])#,P4int[:,2]])
+    #     db4_stack = np.hstack([P0int[:,3],P2int[:,3]])#,P4int[:,4]])
+    #     dPshot_stack = np.hstack([P0int[:,4],P2int[:,4]])#,P4int[:,5]])
 
-        C_marg = (C
-                + css0sig**2*np.outer(dcss0_stack,dcss0_stack)
-                + css2sig**2*np.outer(dcss2_stack,dcss2_stack)
-                + b4sig**2*np.outer(db4_stack, db4_stack)
-                + Pshotsig**2*np.outer(dPshot_stack,dPshot_stack)
-                )
+    #     C_marg = (C
+    #             + css0sig**2*np.outer(dcss0_stack,dcss0_stack)
+    #             + css2sig**2*np.outer(dcss2_stack,dcss2_stack)
+    #             + b4sig**2*np.outer(db4_stack, db4_stack)
+    #             + Pshotsig**2*np.outer(dPshot_stack,dPshot_stack)
+    #             )
         
-        model_vector = np.hstack([P0int[:,0],P2int[:,0]])
-        return C_marg, model_vector, Omega_m, sigma8
+    #     model_vector = np.hstack([P0int[:,0],P2int[:,0]])
+    #     return C_marg, model_vector, Omega_m, sigma8
