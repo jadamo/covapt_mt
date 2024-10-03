@@ -22,8 +22,8 @@ class covariance_model():
     
     """
 
-    def __init__(self, z:float, n_galaxy, alpha=0.02, k=np.linspace(0.005, 0.245, 25),
-                 window_dir=covapt_data_dir, key="HighZ_NGC"):
+    def __init__(self, sample_bin, zbin, n_galaxy, alpha=0.02, k=np.linspace(0.005, 0.245, 25),
+                 window_dir=covapt_data_dir):
         """Initializes power spectrum and covariance model
         
         Args:
@@ -33,15 +33,12 @@ class covariance_model():
             window_dir: location of precomputed window functions. Detault directory provided by the repo
             key: specific data sample to model. Must be one of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]
         """
-        assert key in ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"], \
-        'ERROR: invalid key specified! Should be one of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]'
-
         self.set_k_bins(k)
         self.set_number_densities(alpha, n_galaxy)
-        self._load_G_window_functions(key, window_dir)
+        self._load_G_window_functions(sample_bin, zbin, window_dir)
         #self._load_NG_window_functions(key, window_dir)
 
-        self.set_survey_pars(0.02) # <- this is for NG covariance only!
+        self.set_survey_pars(alpha) # <- this is for NG covariance only!
         self.pk_galaxy = None
 
         # vectorize some of the more expensive functions
@@ -65,7 +62,7 @@ class covariance_model():
             self.powW22x10=np.loadtxt(window_dir+'WindowPower_W22xW10_'+key+'.dat')
 
     #-------------------------------------------------------------------
-    def _load_G_window_functions(self, key:str, window_dir:str):
+    def _load_G_window_functions(self, sample_bin:int, zbin:int, window_dir:str):
         """Loads gaussian window functions from file"""
         # Loading window power spectra calculated from the survey random catalog (code will be uploaded in a different notebook)
         # These are needed to calculate the sigma^2 terms
@@ -73,11 +70,11 @@ class covariance_model():
         # First section of these is for W22, second for W10 and third for W22xW10
 
         #Using the window kernels calculated from the survey random catalog as input
-        window_file = window_dir+'Wij_k'+str(self.num_kbins)+'_'+key+'.npy'
+        window_file = window_dir+'Wij_k'+str(self.num_kbins)+'_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+'.npy'
         if not os.path.exists(window_file):
             raise IOError("ERROR! Couldn't find", window_file)
         
-        self.WijFile = np.load(window_dir+'Wij_k'+str(self.num_kbins)+'_'+key+'.npy')
+        self.WijFile = np.load(window_file)
 
     #-------------------------------------------------------------------
     def load_power_spectrum(self, pk_file):

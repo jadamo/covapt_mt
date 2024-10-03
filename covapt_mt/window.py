@@ -12,13 +12,13 @@ import itertools as itt
 from nbodykit import set_options
 set_options(global_cache_size=2e9)
 
-from CovNet.config import CovaPT_data_dir
+from covapt_mt.config import covapt_data_dir
 
 class Survey_Window_Kernels():
     """
     Class that handles both Super-Sample Covariance (SSC) window function and FFT 
     """
-    def __init__ (self, h:float, Om0:float, key="HighZ_NGC", data_dir=CovaPT_data_dir):
+    def __init__ (self, h:float, Om0:float, zbin, sample_bin, data_dir=covapt_data_dir):
         """Constructs Survey_Window_Kernels object
 
         Args:
@@ -32,11 +32,8 @@ class Survey_Window_Kernels():
             IOError: If random catalog doesn't exist in the specified directory
         """
 
-        assert key in ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"], \
-        'ERROR: invalid key specified! Should be one of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]'
-
         # load in random catalog
-        self.randoms = self.load_survey_randoms(key, data_dir)
+        self.randoms = self.load_survey_randoms(zbin, sample_bin, data_dir)
 
         # convert redshifts to physical distances based on some catalog cosmology
         self.convert_to_distances(h, Om0)
@@ -44,7 +41,7 @@ class Survey_Window_Kernels():
         # self.I22 = np.sum(self.randoms['NZ']**1 * self.randoms['WEIGHT_FKP']**2)
         # self.I22 = self.I22.compute()    
 
-    def load_survey_randoms(self, key, data_dir):
+    def load_survey_randoms(self, zbin, sample_bin, data_dir):
         """Loads random survey catalog from file and
         
         Args:
@@ -55,23 +52,12 @@ class Survey_Window_Kernels():
             IOError: If random catalog doesn't exist in the specified directory
 
         """
-        if key == "HighZ_NGC":
-            random_file = 'random0_DR12v5_CMASS_North.fits'
-        elif key == "HighZ_SGC":
-            random_file = 'random0_DR12v5_CMASS_South.fits'
-        elif key == "LowZ_NGC":
-            random_file = 'random0_DR12v5_LOWZ_North.fits'
-        elif key == "LowZ_SGC":
-            random_file = 'random0_DR12v5_LOWZ_South.fits'
+        random_file = "random_sample_"+str(sample_bin)+"_redshift_"+str(zbin)+".fits"
 
         if not os.path.exists(data_dir+random_file):
-            raise IOError("Could not find survey randoms catalog! You can download the necesary files from https://data.sdss.org/sas/dr12/boss/lss/")
+            raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
         randoms = FITSCatalog(data_dir+random_file)
 
-        if "LowZ" in key:
-            randoms = randoms[(randoms['Z'] > 0.2) * (randoms['Z'] < 0.5)]
-        else:
-            randoms = randoms[(randoms['Z'] > 0.5) * (randoms['Z'] < 0.75)]
         return randoms
 
     def convert_to_distances(self, h:float, Om0:float):
@@ -272,7 +258,7 @@ class Gaussian_Window_Kernels():
     NOTE: This constructor needs FFT randoms to be pre-calculated, which you can do with the Survey_Window_Kernels class
     """
 
-    def __init__(self, k_centers, key="HighZ_NGC"):
+    def __init__(self, k_centers, zbin, sample_bin):
         """ Gaussian window function constructor
         
         Args:
@@ -283,11 +269,6 @@ class Gaussian_Window_Kernels():
             AssertionError: If key is invalid, or if the box size is too small
         """
 
-        # sanity checks 
-        assert key in ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"], \
-               'ERROR: invalid key specified! Should be one of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]'
-
-        assert os.path.exists(CovaPT_data_dir+"FFTWinFun_"+key+".npy")
         # the total number of kbins
         self.nBins = len(k_centers)
 
@@ -311,7 +292,9 @@ class Gaussian_Window_Kernels():
         assert self.icut < self.Lm2
 
         # Load survey random FFTs
-        self.fft_file = CovaPT_data_dir+'FFTWinFun_HighZ_NGC.npy'
+        self.fft_file = covapt_data_dir+'FFTWinFun_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+".npy"
+        assert os.path.exists(self.fft_file)
+        
         self.Wij2 = self.load_fft_file()
 
     def get_k_bin_edges(self, k_centers):
