@@ -18,7 +18,7 @@ class Survey_Window_Kernels():
     """
     Class that handles both Super-Sample Covariance (SSC) window function and FFT 
     """
-    def __init__ (self, h:float, Om0:float, zbin, sample_bin, data_dir=covapt_data_dir):
+    def __init__ (self, h:float, Om0:float, zbin, sample_bin, data_dir=covapt_data_dir, random_file=""):
         """Constructs Survey_Window_Kernels object
 
         Args:
@@ -33,7 +33,7 @@ class Survey_Window_Kernels():
         """
 
         # load in random catalog
-        self.randoms = self.load_survey_randoms(zbin, sample_bin, data_dir)
+        self.randoms = self.load_survey_randoms(zbin, sample_bin, data_dir, random_file)
 
         # convert redshifts to physical distances based on some catalog cosmology
         self.convert_to_distances(h, Om0)
@@ -41,7 +41,7 @@ class Survey_Window_Kernels():
         # self.I22 = np.sum(self.randoms['NZ']**1 * self.randoms['WEIGHT_FKP']**2)
         # self.I22 = self.I22.compute()    
 
-    def load_survey_randoms(self, zbin, sample_bin, data_dir):
+    def load_survey_randoms(self, zbin, sample_bin, data_dir, file_name=""):
         """Loads random survey catalog from file and
         
         Args:
@@ -52,7 +52,10 @@ class Survey_Window_Kernels():
             IOError: If random catalog doesn't exist in the specified directory
 
         """
-        random_file = "random_sample_"+str(sample_bin)+"_redshift_"+str(zbin)+".fits"
+        if file_name == "":
+            random_file = "random_sample_"+str(sample_bin)+"_redshift_"+str(zbin)+".fits"
+        else:
+            random_file = file_name
 
         if not os.path.exists(data_dir+random_file):
             raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
