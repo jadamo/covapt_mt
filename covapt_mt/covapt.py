@@ -70,7 +70,11 @@ class covariance_model():
         # First section of these is for W22, second for W10 and third for W22xW10
 
         #Using the window kernels calculated from the survey random catalog as input
-        window_file = window_dir+'Wij_k'+str(self.num_kbins)+'_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+'.npy'
+        if window_dir[-4:] == ".npy":
+            window_file = window_dir
+        else:
+            window_file = window_dir+'Wij_k'+str(self.num_kbins)+'_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+'.npy'
+        
         if not os.path.exists(window_file):
             raise IOError("ERROR! Couldn't find", window_file)
         

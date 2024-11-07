@@ -18,7 +18,8 @@ class Survey_Window_Kernels():
     """
     Class that handles both Super-Sample Covariance (SSC) window function and FFT 
     """
-    def __init__ (self, h:float, Om0:float, zbin, sample_bin, data_dir=covapt_data_dir, random_file=""):
+    def __init__ (self, h:float, Om0:float, zbin, sample_bin, 
+                  data_dir=covapt_data_dir, random_file=""):
         """Constructs Survey_Window_Kernels object
 
         Args:
@@ -38,8 +39,8 @@ class Survey_Window_Kernels():
         # convert redshifts to physical distances based on some catalog cosmology
         self.convert_to_distances(h, Om0)
 
-        # self.I22 = np.sum(self.randoms['NZ']**1 * self.randoms['WEIGHT_FKP']**2)
-        # self.I22 = self.I22.compute()    
+        self.I22 = np.sum(self.randoms['NZ']**1 * self.randoms['WEIGHT_FKP']**2)
+        self.I22 = self.I22.compute()    
 
     def load_survey_randoms(self, zbin, sample_bin, data_dir, file_name=""):
         """Loads random survey catalog from file and
@@ -261,12 +262,15 @@ class Gaussian_Window_Kernels():
     NOTE: This constructor needs FFT randoms to be pre-calculated, which you can do with the Survey_Window_Kernels class
     """
 
-    def __init__(self, k_centers, zbin, sample_bin):
+    def __init__(self, k_centers, zbin, sample_bin, box_size, I22):
         """ Gaussian window function constructor
         
         Args:
             k_centers: np array of k bin centers
-            key: one of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]
+            zbin: redshift bin index
+            sample_bin: sample bin index
+            box_size: length of box used to compute FFTs in Mpc/h
+            I22: Normalization factor calculated from random catalogs
 
         Raises:
             AssertionError: If key is invalid, or if the box size is too small
@@ -279,26 +283,33 @@ class Gaussian_Window_Kernels():
         self.kbin_width, self.kbin_edges = self.get_k_bin_edges(k_centers)
 
         # length of box when computing FFTs
-        self.Lbox = 3750.
+        self.Lbox = box_size
 
         # fundamental k mode
         self.kfun=2.*np.pi/self.Lbox
+
+        #if self.kfun > self.kbin_edges[1]:
+        #    print("WARNING! fundamental k mode is larger than the smallest k bin! This might cause issues!")
 
         # As the window falls steeply with k, only low-k regions are needed for the calculation.
         # Therefore cutting out the high-k modes in the FFTs using the self.icut parameter
         self.icut=15; # needs to be less than Lm//2 (Lm: size of FFT)
 
         # from eq 3 of ??
-        self.I22=437.183365
+        #self.I22=437.183365
+        self.I22 = I22
 
+        # Why are there 2 of these? 
         self.Lm2 = int(self.kbin_width*self.nBins/self.kfun)+1
-        assert self.icut < self.Lm2
+        assert self.icut < (self.Lm2 / 2)
 
         # Load survey random FFTs
         self.fft_file = covapt_data_dir+'FFTWinFun_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+".npy"
         assert os.path.exists(self.fft_file)
         
         self.Wij2 = self.load_fft_file()
+
+        self.Bin_kmodes, self.Bin_ModeNum = self.get_shell_modes()
 
     def get_k_bin_edges(self, k_centers):
         """calculates bin edges from an array of bin centers
@@ -335,19 +346,31 @@ class Gaussian_Window_Kernels():
         return(temp2[ia-self.icut:ia+self.icut+1,ia-self.icut:ia+self.icut+1,ia-self.icut:ia+self.icut+1])
 
     def get_shell_modes(self):
-        [ix,iy,iz] = np.zeros((3,2*self.Lm2+1,2*self.Lm2+1,2*self.Lm2+1));
-        Bin_kmodes=[]; Bin_ModeNum=np.zeros(self.nBins,dtype=int)
+        """Calculates the specific kmodes present in a given k-bin based on the given survey propereies
+        
+        Raises:
+            AssertionError: If one of the given k-bins has 0 k modes. This can happen if your box size is too small relative to your k-bin width
+        """
+        [ix,iy,iz] = np.zeros((3,2*self.Lm2+1,2*self.Lm2+1,2*self.Lm2+1))
+        Bin_kmodes=[]
+        Bin_ModeNum=np.zeros(self.nBins,dtype=int)
 
         for i in range(self.nBins): Bin_kmodes.append([])
         for i in range(len(ix)):
-            ix[i,:,:]+=i-self.Lm2; iy[:,i,:]+=i-self.Lm2; iz[:,:,i]+=i-self.Lm2
+            ix[i,:,:]+=i-self.Lm2
+            iy[:,i,:]+=i-self.Lm2
+            iz[:,:,i]+=i-self.Lm2
 
         rk=np.sqrt(ix**2+iy**2+iz**2)
         sort=(rk*self.kfun/self.kbin_width).astype(int)
 
         for i in range(self.nBins):
-            ind=(sort==i); Bin_ModeNum[i]=len(ix[ind]); \
+            ind=(sort==i)
+            Bin_ModeNum[i]=len(ix[ind])
             Bin_kmodes[i]=np.hstack((ix[ind].reshape(-1,1),iy[ind].reshape(-1,1),iz[ind].reshape(-1,1),rk[ind].reshape(-1,1)))
+        
+        assert np.all(Bin_ModeNum != 0), "ERROR! some bins have 0 k modes! Your box-size or kbin-width is probably too small"
+        
         return Bin_kmodes, Bin_ModeNum
 
     def load_fft_file(self):
@@ -378,8 +401,6 @@ class Gaussian_Window_Kernels():
             kmodes_sampled: The number of random samples to use
         """
 
-        Bin_kmodes, Bin_ModeNum = self.get_shell_modes()
-
         [W, Wxx, Wxy, Wxz, Wyy, Wyz, Wzz, Wxxxx, Wxxxy, Wxxxz, Wxxyy, Wxxyz, Wxxzz, Wxyyy, Wxyyz, Wxyzz,\
         Wxzzz, Wyyyy, Wyyyz, Wyyzz, Wyzzz, Wzzzz, W12, W12xx, W12xy, W12xz, W12yy, W12yz, W12zz, W12xxxx,\
         W12xxxy, W12xxxz, W12xxyy, W12xxyz, W12xxzz, W12xyyy, W12xyyz, W12xyzz, W12xzzz, W12yyyy, W12yyyz,\
@@ -392,16 +413,16 @@ class Gaussian_Window_Kernels():
         for i in range(2*self.icut+1): 
             ix[i,:,:]+=i-self.icut; iy[:,i,:]+=i-self.icut; iz[:,:,i]+=i-self.icut
             
-        if (kmodes_sampled<Bin_ModeNum[bin_idx]):
+        if (kmodes_sampled<self.Bin_ModeNum[bin_idx]):
             norm=kmodes_sampled
-            sampled=(np.random.rand(kmodes_sampled)*Bin_ModeNum[bin_idx]).astype(int)
+            sampled=(np.random.rand(kmodes_sampled)*self.Bin_ModeNum[bin_idx]).astype(int)
         else:
-            norm=Bin_ModeNum[bin_idx]
-            sampled=np.arange(Bin_ModeNum[bin_idx],dtype=int)
+            norm=self.Bin_ModeNum[bin_idx]
+            sampled=np.arange(self.Bin_ModeNum[bin_idx],dtype=int)
         
         # Randomly select a mode in the k1 bin
         for n in sampled:
-            [ik1x,ik1y,ik1z,rk1]=Bin_kmodes[bin_idx][n]
+            [ik1x,ik1y,ik1z,rk1]=self.Bin_kmodes[bin_idx][n]
             if (rk1==0.): k1xh=0; k1yh=0; k1zh=0
             else: k1xh=ik1x/rk1; k1yh=ik1y/rk1; k1zh=ik1z/rk1
                 
@@ -411,7 +432,7 @@ class Gaussian_Window_Kernels():
             sort=(rk2*self.kfun/self.kbin_width).astype(int)-bin_idx # to decide later which shell the k2 mode belongs to
             ind=(rk2==0)
             if (ind.any()>0): rk2[ind]=1e10
-            k2xh/=rk2; k2yh/=rk2; k2zh/=rk2;
+            k2xh/=rk2; k2yh/=rk2; k2zh/=rk2
             #k2 hat arrays built
             
         # Now calculating window multipole kernels by taking dot products of cartesian FFTs with k1-hat, k2-hat arrays
@@ -616,15 +637,16 @@ class Gaussian_Window_Kernels():
                 
         for i in range(0,2*3+1):
             if(i+bin_idx-3>=self.nBins or i+bin_idx-3<0): 
-                avgW00[i]*=0; avgW22[i]*=0; avgW44[i]*=0;
-                avgW20[i]*=0; avgW40[i]*=0; avgW42[i]*=0; continue
-            avgW00[i]=avgW00[i]/(norm*Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW22[i]=avgW22[i]/(norm*Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW44[i]=avgW44[i]/(norm*Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW20[i]=avgW20[i]/(norm*Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW40[i]=avgW40[i]/(norm*Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW42[i]=avgW42[i]/(norm*Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            
+                avgW00[i]*=0; avgW22[i]*=0; avgW44[i]*=0
+                avgW20[i]*=0; avgW40[i]*=0; avgW42[i]*=0
+                continue
+            avgW00[i]=avgW00[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
+            avgW22[i]=avgW22[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
+            avgW44[i]=avgW44[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
+            avgW20[i]=avgW20[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
+            avgW40[i]=avgW40[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
+            avgW42[i]=avgW42[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
+        
         avgWij[:,:,0]=2.*np.real(avgW00); avgWij[:,:,1]=25.*np.real(avgW22); avgWij[:,:,2]=81.*np.real(avgW44);
         avgWij[:,:,3]=5.*2.*np.real(avgW20); avgWij[:,:,4]=9.*2.*np.real(avgW40); avgWij[:,:,5]=45.*np.real(avgW42);
         
