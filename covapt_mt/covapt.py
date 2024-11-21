@@ -10,7 +10,6 @@ from numpy import pi
 from scipy.misc import derivative
 import itertools
 
-from covapt_mt.config import covapt_data_dir
 from covapt_mt import T0
 
 class covariance_model():
@@ -23,7 +22,7 @@ class covariance_model():
     """
 
     def __init__(self, sample_bin, zbin, n_galaxy, alpha=0.02, k=np.linspace(0.005, 0.245, 25),
-                 window_dir=covapt_data_dir):
+                 window_dir=""):
         """Initializes power spectrum and covariance model
         
         Args:
@@ -116,8 +115,8 @@ class covariance_model():
         self.alpha_mt =np.zeros((self.num_tracers,self.num_tracers))
         np.fill_diagonal(self.alpha_mt, alpha)
         self.invng_mt =np.zeros((self.num_tracers,self.num_tracers))
-        np.fill_diagonal(self.invng_mt, 1./n_galaxy)
-
+        np.fill_diagonal(self.invng_mt, 1./np.array(n_galaxy))
+        
     def set_survey_pars(self, alpha):
         # The following parameters are calculated from the survey random catalog
         # Using Iij convention in Eq.(3)

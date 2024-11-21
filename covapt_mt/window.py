@@ -4,7 +4,7 @@
 import os
 import numpy as np
 from numpy import conj
-from nbodykit.source.catalog import FITSCatalog
+from nbodykit.source.catalog import HDFCatalog
 from nbodykit.lab import cosmology, transform
 import dask.array as da
 import itertools as itt
@@ -12,20 +12,19 @@ import itertools as itt
 from nbodykit import set_options
 set_options(global_cache_size=2e9)
 
-from covapt_mt.config import covapt_data_dir
-
 class Survey_Window_Kernels():
     """
     Class that handles both Super-Sample Covariance (SSC) window function and FFT 
     """
     def __init__ (self, h:float, Om0:float, zbin, sample_bin, 
-                  data_dir=covapt_data_dir, random_file=""):
+                  data_dir="", random_file=""):
         """Constructs Survey_Window_Kernels object
 
         Args:
             h: Hubble parameter for the catalog cosmology
             Om0: Present matter density parameter for the catalog cosmology
-            key: One of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]
+            zbin: index specifying what redshift bin this random catalog corresponds to
+            sample_bin: index specifying what sample / tracer this random catalog corresponds to
             data_dir: location of survey random catalogs. Default the directory specified in config.py
         
         Raises:
@@ -43,10 +42,11 @@ class Survey_Window_Kernels():
         self.I22 = self.I22.compute()    
 
     def load_survey_randoms(self, zbin, sample_bin, data_dir, file_name=""):
-        """Loads random survey catalog from file and
+        """Loads random survey catalog from an hdf5 file
         
         Args:
-            key: One of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]
+            zbin: index specifying what redshift bin this random catalog corresponds to
+            sample_bin: index specifying what sample / tracer this random catalog corresponds to
             data_dir: location of survey random catalogs. Default the directory specified in config.py
         
         Raises:
@@ -54,13 +54,14 @@ class Survey_Window_Kernels():
 
         """
         if file_name == "":
-            random_file = "random_sample_"+str(sample_bin)+"_redshift_"+str(zbin)+".fits"
+            random_file = "random_sample_"+str(sample_bin)+"_redshift_"+str(zbin)+".hdf5"
         else:
             random_file = file_name
 
+        # TODO: Update to match Henry's file format when he gives you it
         if not os.path.exists(data_dir+random_file):
             raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
-        randoms = FITSCatalog(data_dir+random_file)
+        randoms = HDFCatalog(data_dir+random_file)
 
         return randoms
 
@@ -262,7 +263,7 @@ class Gaussian_Window_Kernels():
     NOTE: This constructor needs FFT randoms to be pre-calculated, which you can do with the Survey_Window_Kernels class
     """
 
-    def __init__(self, k_centers, zbin, sample_bin, box_size, I22):
+    def __init__(self, data_dir, k_centers, zbin, sample_bin, box_size, I22):
         """ Gaussian window function constructor
         
         Args:
@@ -304,7 +305,7 @@ class Gaussian_Window_Kernels():
         assert self.icut < (self.Lm2 / 2)
 
         # Load survey random FFTs
-        self.fft_file = covapt_data_dir+'FFTWinFun_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+".npy"
+        self.fft_file = data_dir+'FFTWinFun_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+".npy"
         assert os.path.exists(self.fft_file)
         
         self.Wij2 = self.load_fft_file()

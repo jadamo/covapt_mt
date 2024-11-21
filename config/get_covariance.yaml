@@ -1,0 +1,26 @@
+
+input_dir : "/home/joeadamo/Research/SPHEREx/covapt_mt/data/"
+output_dir : "/home/joeadamo/Research/SPHEREx/covapt_mt/data/"
+
+# parameters for producing the window function
+make_gaussian_window : False
+make_ssc_window : False # <- currently not configured for multi-tracer!
+random_file : "random_for_Robin.hdf5"
+window_file : "Wij_k200_for_Robin.npy"
+num_processes : 14
+fft_mesh_size : 100
+# size of the survey in Mpc/h
+box_size : 3200
+# number of kmodes to sample
+# The default used by Jay Wadekar was 25000, which was run on a cluster
+kmodes_sampled : 10
+
+h : 0.7
+Om0 : 0.3
+
+make_Gaussian_cov : True
+k_array_file : "k_FS.dat"
+pk_galaxy_file : "ps_for_Robin.npy"
+covariance_file : "cov_FS_Robin.npy"
+alpha : 1.
+n_galaxy : [3.e-4]
