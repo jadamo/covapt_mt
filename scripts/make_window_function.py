@@ -9,11 +9,6 @@ from multiprocessing import Pool
 from covapt_mt import window
 from covapt_mt.utils import load_config_file
 
-# ints specifying which redshift and sample bins to generate windows for
-# there are 5 sample bins and 11 redshift bins
-zbin = 1
-sample_bin = 1
-
 def main():
     
     if len(sys.argv) < 2:
@@ -30,12 +25,17 @@ def main():
 
     survey_kernels = window.Survey_Window_Kernels(config_dict["h"], 
                                                   config_dict["Om0"],
-                                                  zbin,
-                                                  sample_bin,
+                                                  config_dict["zbins"],
                                                   config_dict["input_dir"],
-                                                  config_dict["random_file"])
+                                                  config_dict["random_file_prefix"])
     I22 = survey_kernels.I22
-    k_centers = np.loadtxt(config_dict["input_dir"]+config_dict["k_array_file"])
+    # TODO: update this once I get a k array file from Chen / Henry
+    k_data = np.load(config_dict["input_dir"]+config_dict["k_array_file"])
+    num_zbins = int(len(config_dict["zbins"]) / 2)
+    k_centers = []
+    for zbin in range(num_zbins):
+        key = "k_"+str(zbin)
+        k_centers.append(k_data[key])
 
     print("\nStarting FFT calculations...")
     t1 = time.time()
@@ -43,48 +43,43 @@ def main():
     t2 = time.time()
     print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
 
-    save_file = config_dict["output_dir"]+'FFTWinFun_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+'.npy'
+    save_file = config_dict["output_dir"]+'FFTWinFun.npy'
     np.save(save_file,export)
     print("FFTs saved to", save_file)
 
     if config_dict["make_gaussian_window"]:
-        print("\nStarting Gaussian window function generation with {:0.0f} processes...".format(config_dict["num_processes"]))
         t1 = time.time()
-        window_kernels = window.Gaussian_Window_Kernels(config_dict["output_dir"],
-                                                        k_centers, 
-                                                        zbin, 
-                                                        sample_bin, 
-                                                        config_dict["box_size"], 
-                                                        I22)
-        idx = range(len(k_centers))
-        nBins = len(k_centers)
+        # TODO: find a faster way to loop thru redshift bins
+        # For now, save the window functions in seperate files
+        for z_idx in range(num_zbins):
+            print("Starting Gaussian window function generation for zbin {:0.0f} with {:0.0f} processes...".format(z_idx, config_dict["num_processes"]))
+            window_kernels = window.Gaussian_Window_Kernels(config_dict["output_dir"],
+                                                            k_centers[z_idx], 
+                                                            z_idx,
+                                                            config_dict["box_size"], 
+                                                            I22[z_idx])
+            k_idx = range(len(k_centers))
+            p = Pool(processes=config_dict["num_processes"])
+            Wij=p.starmap(window_kernels.calc_gaussian_window_function, 
+                           zip(k_idx, repeat(config_dict["kmodes_sampled"])))
+            p.close()
+            p.join()
 
-        p = Pool(processes=config_dict["num_processes"])
-        WinFunAll=p.starmap(window_kernels.calc_gaussian_window_function, 
-                            zip(idx, repeat(config_dict["kmodes_sampled"])))
-        p.close()
-        p.join()
-
+            save_file = config_dict["output_dir"]+config_dict["window_file_prefix"]+str(z_idx)+".npy"
+            np.save(save_file, Wij)
+            print("window function saved to", save_file)
         t2 = time.time()
         print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
 
-        #save_file = covapt_data_dir+'Wij_k'+str(nBins)+'_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+'.npy'
-        save_file = config_dict["output_dir"]+config_dict["window_file"]
-        b=np.zeros((len(idx),7,15,6))
-        for i in range(len(idx)):
-            b[i]=WinFunAll[i]
-        np.save(save_file, b)
-        print("window function saved to", save_file)
-
     if config_dict["make_ssc_window"]:
-        print("WARNING! This functionality has not been tested!")
+        print("WARNING! This functionality does not work right now!")
         print("\nStarting FFT calculations...")
         t1 = time.time()
         P_W = survey_kernels.calc_SSC_window_function(config_dict["fft_mesh_size"], config_dict["box_size"])
         t2 = time.time()
         print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
 
-        save_file = config_dict["output_dir"]+'WindowPowers_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+'.npy'
+        save_file = config_dict["output_dir"]+'WindowPowers.npy'
         np.save(save_file,P_W)
         print("SSC window functions saved to", save_file)
 

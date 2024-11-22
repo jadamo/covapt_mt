@@ -21,20 +21,22 @@ class covariance_model():
     
     """
 
-    def __init__(self, sample_bin, zbin, n_galaxy, alpha=0.02, k=np.linspace(0.005, 0.245, 25),
+    def __init__(self, num_tracers, num_zbins, n_galaxy, alpha, k_array_file,
                  window_dir=""):
         """Initializes power spectrum and covariance model
         
         Args:
             z: effective / mean redshift of the sample
-            k: np array of k bin centers. Default 25 k bins with kmax of 0.25 h/Mpc
+            k: np array of k bin centers
             alpha: ratio of number of objects in the galaxy vs random catalogs
             window_dir: location of precomputed window functions. Detault directory provided by the repo
             key: specific data sample to model. Must be one of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]
         """
-        self.set_k_bins(k)
+        self.num_tracers = num_tracers
+        self.num_zbins = num_zbins
+        self.set_k_bins(k_array_file)
         self.set_number_densities(alpha, n_galaxy)
-        self._load_G_window_functions(sample_bin, zbin, window_dir)
+        self._load_G_window_functions(window_dir)
         #self._load_NG_window_functions(key, window_dir)
 
         self.set_survey_pars(alpha) # <- this is for NG covariance only!
@@ -61,7 +63,7 @@ class covariance_model():
             self.powW22x10=np.loadtxt(window_dir+'WindowPower_W22xW10_'+key+'.dat')
 
     #-------------------------------------------------------------------
-    def _load_G_window_functions(self, sample_bin:int, zbin:int, window_dir:str):
+    def _load_G_window_functions(self, window_dir:str):
         """Loads gaussian window functions from file"""
         # Loading window power spectra calculated from the survey random catalog (code will be uploaded in a different notebook)
         # These are needed to calculate the sigma^2 terms
@@ -69,43 +71,55 @@ class covariance_model():
         # First section of these is for W22, second for W10 and third for W22xW10
 
         #Using the window kernels calculated from the survey random catalog as input
-        if window_dir[-4:] == ".npy":
-            window_file = window_dir
-        else:
-            window_file = window_dir+'Wij_k'+str(self.num_kbins)+'_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+'.npy'
+        self.WijFile = []
+        for zbin in range(self.num_zbins):
+
+            window_file = window_dir + str(zbin)+".npy"
+            if not os.path.exists(window_file):
+                raise IOError("ERROR! Could not find", window_file)
         
-        if not os.path.exists(window_file):
-            raise IOError("ERROR! Couldn't find", window_file)
-        
-        self.WijFile = np.load(window_file)
+            self.WijFile.append(np.load(window_file))
 
     #-------------------------------------------------------------------
     def load_power_spectrum(self, pk_file):
-        pk_galaxy_raw = np.load(pk_file)
-        self.num_zbins = pk_galaxy_raw.shape[0]
-        self.num_spectra = pk_galaxy_raw.shape[1]
-        assert len(self.k) == pk_galaxy_raw.shape[3], "ERROR: Mismatched kbin lengths!"
+        pk_data = np.load(pk_file)
+        if pk_file[-4:] == ".npz":
+            pk_galaxy_raw = []
+            for z in range(self.num_zbins):
+                pk_galaxy_raw.append(pk_data["pk_"+str(z)])
+                assert len(self.k[z]) == pk_galaxy_raw[z].shape[2], "ERROR: Mismatched kbin lengths!"
+            self.num_spectra = pk_galaxy_raw[0].shape[0]
+        else:
+            pk_galaxy_raw = pk_data
+            self.num_spectra = pk_galaxy_raw.shape[1]
 
         # reformat into form Elisabeth's code expects
         # TODO: simplify this
-        self.pk_galaxy = np.zeros((self.num_zbins, self.num_tracers, self.num_tracers, 5, self.num_kbins))
+        self.pk_galaxy = []
         for z in range(self.num_zbins):
             idx = 0
+            pk_galaxy = np.zeros((self.num_tracers, self.num_tracers, 5, self.num_kbins[z]))
             for i, j in itertools.product(range(self.num_tracers), repeat=2):
                 if i > j: continue
-                self.pk_galaxy[z, i, j, 0, :] = pk_galaxy_raw[z, idx, 0, :]
-                self.pk_galaxy[z, j, i, 0, :] = pk_galaxy_raw[z, idx, 0, :]
-                self.pk_galaxy[z, i, j, 2, :] = pk_galaxy_raw[z, idx, 1, :]
-                self.pk_galaxy[z, j, i, 2, :] = pk_galaxy_raw[z, idx, 1, :]
-                self.pk_galaxy[z, i, j, 4, :] = pk_galaxy_raw[z, idx, 2, :]
-                self.pk_galaxy[z, j, i, 4, :] = pk_galaxy_raw[z, idx, 2, :]
+                self.pk_galaxy[i, j, 0, :] = pk_galaxy_raw[z][idx, 0, :]
+                self.pk_galaxy[j, i, 0, :] = pk_galaxy_raw[z][idx, 0, :]
+                self.pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z][idx, 1, :]
+                self.pk_galaxy[j, i, 2, :] = pk_galaxy_raw[z][idx, 1, :]
+                self.pk_galaxy[i, j, 4, :] = pk_galaxy_raw[z][idx, 2, :]
+                self.pk_galaxy[j, i, 4, :] = pk_galaxy_raw[z][idx, 2, :]
                 idx +=1
+            self.pk_galaxy.append(pk_galaxy)
             
     #-------------------------------------------------------------------
-    def set_k_bins(self, k):
-        self.k = k
-        self.num_kbins=len(k)
-
+    def set_k_bins(self, k_array_file):
+        k_data = np.load(k_array_file)
+        self.k = []
+        self.num_kbins = np.zeros(self.num_zbins, dtype=np.int16)
+        for zbin in range(self.num_zbins):
+            key = "k_"+str(zbin)
+            self.k.append(k_data[key])
+            self.num_kbins[zbin] = len(self.k[zbin])
+            
     #-------------------------------------------------------------------
     def get_k_bins(self):
         return self.k
@@ -375,7 +389,7 @@ class covariance_model():
                     if D < C: continue
                     n_CD += 1
                     for i in range(self.num_kbins):
-                        temp=self.Cij_MT(i,self.WijFile[i], pk_galaxy[z], A=A,B=B,C=C,D=D)
+                        temp=self.Cij_MT(i,self.WijFile[z][i], pk_galaxy[z], A=A,B=B,C=C,D=D)
                         C00=temp[:,0]; C22=temp[:,1]; C20=temp[:,3]
                         for j in range(-3,4):
                             if(i+j>=0 and i+j<self.num_kbins):

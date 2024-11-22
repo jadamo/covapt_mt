@@ -16,7 +16,7 @@ class Survey_Window_Kernels():
     """
     Class that handles both Super-Sample Covariance (SSC) window function and FFT 
     """
-    def __init__ (self, h:float, Om0:float, zbin, sample_bin, 
+    def __init__ (self, h:float, Om0:float, zbins, 
                   data_dir="", random_file=""):
         """Constructs Survey_Window_Kernels object
 
@@ -24,46 +24,53 @@ class Survey_Window_Kernels():
             h: Hubble parameter for the catalog cosmology
             Om0: Present matter density parameter for the catalog cosmology
             zbin: index specifying what redshift bin this random catalog corresponds to
-            sample_bin: index specifying what sample / tracer this random catalog corresponds to
             data_dir: location of survey random catalogs. Default the directory specified in config.py
         
         Raises:
-            AssertionError: If key is invalid
             IOError: If random catalog doesn't exist in the specified directory
         """
 
         # load in random catalog
-        self.randoms = self.load_survey_randoms(zbin, sample_bin, data_dir, random_file)
+        self.load_survey_randoms(zbins, data_dir, random_file)
 
         # convert redshifts to physical distances based on some catalog cosmology
         self.convert_to_distances(h, Om0)
 
-        self.I22 = np.sum(self.randoms['NZ']**1 * self.randoms['WEIGHT_FKP']**2)
-        self.I22 = self.I22.compute()    
-
-    def load_survey_randoms(self, zbin, sample_bin, data_dir, file_name=""):
+    def load_survey_randoms(self, zbins, data_dir, random_file_prefix=""):
         """Loads random survey catalog from an hdf5 file
         
         Args:
-            zbin: index specifying what redshift bin this random catalog corresponds to
-            sample_bin: index specifying what sample / tracer this random catalog corresponds to
             data_dir: location of survey random catalogs. Default the directory specified in config.py
         
         Raises:
             IOError: If random catalog doesn't exist in the specified directory
-
         """
-        if file_name == "":
-            random_file = "random_sample_"+str(sample_bin)+"_redshift_"+str(zbin)+".hdf5"
-        else:
-            random_file = file_name
+        self.num_zbins = int(len(zbins) / 2)
+        self.randoms = []
+        self.I22 = np.zeros(self.num_zbins)
 
-        # TODO: Update to match Henry's file format when he gives you it
-        if not os.path.exists(data_dir+random_file):
-            raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
-        randoms = HDFCatalog(data_dir+random_file)
+        for bin in range(self.num_zbins):
+            random_file = random_file_prefix+"bin"+str(bin)+".hdf5"
+            # TODO: Update to match Henry's file format when he gives you it
+            if not os.path.exists(data_dir+random_file):
+                raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
+            self.randoms.append(HDFCatalog(data_dir+random_file))
+            self.I22[bin] = np.sum(self.randoms[bin]['NZ']**1 * self.randoms[bin]['WEIGHT_FKP']**2)
 
-        return randoms
+    # def split_redshift_bins(self, zbins):
+    #     """splits random catalog into seperate redshift bins based on the zbins config options"""
+    #     self.num_zbins = int(len(zbins) / 2)
+    #     self.I22 = np.zeros(self.num_zbins)
+
+    #     for bin in range(self.num_zbins):
+    #         bin_name = "bin"+str(bin)
+    #         self.randoms[bin_name+"/RA"] = self.randoms["RA"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
+    #         self.randoms[bin_name+"/DEC"] = self.randoms["DEC"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
+    #         self.randoms[bin_name+"/NZ"] = self.randoms["NZ"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
+    #         self.randoms[bin_name+"/WEIGHT_FKP"] = self.randoms["WEIGHT_FKP"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
+    #         self.randoms[bin_name+"/Z"] = self.randoms["Z"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
+
+    #         self.I22[bin] = np.sum(self.randoms[bin_name+'/NZ']**1 * self.randoms[bin_name+'/WEIGHT_FKP']**2)
 
     def convert_to_distances(self, h:float, Om0:float):
         """Converts catalog redshifts to physical distances
@@ -78,9 +85,12 @@ class Survey_Window_Kernels():
 
         cosmo = cosmology.Cosmology(h=h).match(Omega0_m=Om0)
 
-        self.randoms['OriginalPosition'] = transform.SkyToCartesian(
-            self.randoms['RA'], self.randoms['DEC'], self.randoms['Z'], 
-            degrees=True, cosmo=cosmo)
+        for bin in range(self.num_zbins):
+            self.randoms[bin]['OriginalPosition'] = transform.SkyToCartesian(
+                self.randoms[bin]['RA'],
+                self.randoms[bin]['DEC'],
+                self.randoms[bin]['Z'], 
+                degrees=True, cosmo=cosmo)
 
     def num_ffts(self, n):
         """Returns the number of FFTs to do at a given order n"""
@@ -88,7 +98,8 @@ class Survey_Window_Kernels():
 
     def shift_positions(self, BoxSize):
         """Shifts positions to be centered on the box"""
-        self.randoms['Position'] = self.randoms['OriginalPosition'] + da.array(3*[BoxSize/2])
+        for bin in range(self.num_zbins):
+            self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition'] + da.array(3*[BoxSize/2])
 
     def PowerCalc(self, arr, nBins, sort):
         """Calculates window power spectrum from FFT array"""
@@ -108,33 +119,35 @@ class Survey_Window_Kernels():
             BoxSize: The survey box size in Mpc/h. Should encompass all galaxies in the survey
         """
 
-        r = self.randoms['OriginalPosition'].T
-        export=np.zeros((2*(1+self.num_ffts(2)+self.num_ffts(4)),Nmesh,Nmesh,Nmesh),dtype='complex128')
+        export=np.zeros((self.num_zbins, 2*(1+self.num_ffts(2)+self.num_ffts(4)),Nmesh,Nmesh,Nmesh),dtype='complex128')
 
-        ind=0
-        for w in names:
-            print(f'Computing FFTs of {w}')
-            
-            print('Computing 0th order FFTs')
-            Wij = np.fft.fftn(self.randoms.to_mesh(Nmesh=Nmesh, BoxSize=BoxSize, value=w, resampler='tsc', interlaced=True, compensated=True).paint())
-            Wij *= (da.sum(self.randoms[w]).compute())/np.real(Wij[0,0,0]) #Fixing normalization, e.g., zero mode should be I22 for 'W22'
-            export[ind]=Wij; ind+=1
-            
-            print('Computing 2nd order FFTs')
-            for (i,i_label),(j,j_label) in itt.combinations_with_replacement(enumerate(['x', 'y', 'z']), r=2):
-                label = w + i_label + j_label
-                self.randoms[label] = self.randoms[w] * r[i]*r[j] /(r[0]**2 + r[1]**2 + r[2]**2)
-                Wij = np.fft.fftn(self.randoms.to_mesh(Nmesh=Nmesh, BoxSize=BoxSize, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
-                Wij *= (da.sum(self.randoms[label]).compute())/np.real(Wij[0,0,0])
-                export[ind]=Wij; ind+=1
+        for bin in range(self.num_zbins):
+            print("zbin " + str(bin))
+            r = self.randoms[bin]['OriginalPosition'].T
+            ind=0
+            for w in names:
+                print(f'Computing FFTs of {w}')
+                
+                print('Computing 0th order FFTs')
+                Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=BoxSize, value=w, resampler='tsc', interlaced=True, compensated=True).paint())
+                Wij *= (da.sum(self.randoms[bin][w]).compute())/np.real(Wij[0,0,0]) #Fixing normalization, e.g., zero mode should be I22 for 'W22'
+                export[bin, ind]=Wij; ind+=1
+                
+                print('Computing 2nd order FFTs')
+                for (i,i_label),(j,j_label) in itt.combinations_with_replacement(enumerate(['x', 'y', 'z']), r=2):
+                    label = w + i_label + j_label
+                    self.randoms[bin][label] = self.randoms[bin][w] * r[i]*r[j] /(r[0]**2 + r[1]**2 + r[2]**2)
+                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=BoxSize, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
+                    Wij *= (da.sum(self.randoms[bin][label]).compute())/np.real(Wij[0,0,0])
+                    export[bin, ind]=Wij; ind+=1
 
-            print('Computing 4th order FFTs')
-            for (i,i_label),(j,j_label),(k,k_label),(l,l_label) in itt.combinations_with_replacement(enumerate(['x', 'y', 'z']), r=4):
-                label = w + i_label + j_label + k_label + l_label
-                self.randoms[label] = self.randoms[w] * r[i]*r[j]*r[k]*r[l] /(r[0]**2 + r[1]**2 + r[2]**2)**2
-                Wij = np.fft.fftn(self.randoms.to_mesh(Nmesh=Nmesh, BoxSize=BoxSize, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
-                Wij *= (da.sum(self.randoms[label]).compute())/np.real(Wij[0,0,0])
-                export[ind]=Wij; ind+=1
+                print('Computing 4th order FFTs')
+                for (i,i_label),(j,j_label),(k,k_label),(l,l_label) in itt.combinations_with_replacement(enumerate(['x', 'y', 'z']), r=4):
+                    label = w + i_label + j_label + k_label + l_label
+                    self.randoms[bin][label] = self.randoms[bin][w] * r[i]*r[j]*r[k]*r[l] /(r[0]**2 + r[1]**2 + r[2]**2)**2
+                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=BoxSize, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
+                    Wij *= (da.sum(self.randoms[bin][label]).compute())/np.real(Wij[0,0,0])
+                    export[bin, ind]=Wij; ind+=1
 
         return export
 
@@ -150,8 +163,9 @@ class Survey_Window_Kernels():
 
         # Shifting the points such that the survey center is in the center of the box
         self.shift_positions(BoxSize)
-        self.randoms['W12'] = self.randoms['WEIGHT_FKP']**2 
-        self.randoms['W22'] = (self.randoms['WEIGHT_FKP']**2) * self.randoms['NZ']
+        for bin in range(self.num_zbins):
+            self.randoms[bin]['W12'] = self.randoms[bin]['WEIGHT_FKP']**2 
+            self.randoms[bin]['W22'] = (self.randoms[bin]['WEIGHT_FKP']**2) * self.randoms[bin]['NZ']
 
         return self.calc_FFTs(Nmesh, BoxSize, ["W22", "W12"])
     
@@ -257,31 +271,27 @@ class Survey_Window_Kernels():
 
 # ------------------------------------------------------------------
 class Gaussian_Window_Kernels():
-    """Defines the kernels and calculations for calculating the window function for the
+    """Defines the kernels and calculations for the window function used in the
     Gaussian term of the covariance matrix.
 
     NOTE: This constructor needs FFT randoms to be pre-calculated, which you can do with the Survey_Window_Kernels class
     """
 
-    def __init__(self, data_dir, k_centers, zbin, sample_bin, box_size, I22):
+    def __init__(self, data_dir, k_centers:list, z_idx:int, box_size, I22):
         """ Gaussian window function constructor
         
         Args:
-            k_centers: np array of k bin centers
-            zbin: redshift bin index
-            sample_bin: sample bin index
+            data_dir: location of fft files
+            k_centers: np arrays of k bin centers
+            z_idx : index of redshift bin to use
             box_size: length of box used to compute FFTs in Mpc/h
             I22: Normalization factor calculated from random catalogs
 
         Raises:
-            AssertionError: If key is invalid, or if the box size is too small
+            AssertionError: If the box size is too small
         """
-
-        # the total number of kbins
-        self.nBins = len(k_centers)
-
         # calculate bin edges and width from the k centers
-        self.kbin_width, self.kbin_edges = self.get_k_bin_edges(k_centers)
+        self.get_k_bin_edges(k_centers)
 
         # length of box when computing FFTs
         self.Lbox = box_size
@@ -305,10 +315,7 @@ class Gaussian_Window_Kernels():
         assert self.icut < (self.Lm2 / 2)
 
         # Load survey random FFTs
-        self.fft_file = data_dir+'FFTWinFun_sample_'+str(sample_bin)+'_redshift_'+str(zbin)+".npy"
-        assert os.path.exists(self.fft_file)
-        
-        self.Wij2 = self.load_fft_file()
+        self.load_fft_file(data_dir, z_idx)
 
         self.Bin_kmodes, self.Bin_ModeNum = self.get_shell_modes()
 
@@ -317,22 +324,17 @@ class Gaussian_Window_Kernels():
 
         Args:
             k_centers: An np array of evenly-spaced bin centers
-        
-        Returns:
-            kbin_width: the width of each bin
-            kbin_edges: np array of bin edges (size of centers + 1)
         """
 
-        kbin_width = k_centers[-1] - k_centers[-2]
-        kbin_half_width = kbin_width / 2.
+        self.kbin_width = k_centers[-1] - k_centers[-2]
+        self.nBins = len(k_centers)
+        kbin_half_width = self.kbin_width / 2.
         kbin_edges = np.zeros(len(k_centers)+1)
         kbin_edges[0] = k_centers[0] - kbin_half_width
 
         assert kbin_edges[0] > 0.
         for i in range(1, len(kbin_edges)):
             kbin_edges[i] = k_centers[i-1] + kbin_half_width
-
-        return kbin_width, kbin_edges
 
     def fft(self, temp):
         """Does some shifting of the fft arrays"""
@@ -374,38 +376,38 @@ class Gaussian_Window_Kernels():
         
         return Bin_kmodes, Bin_ModeNum
 
-    def load_fft_file(self):
-        """Loads and organizes information from the random catalog FFTs
+    def load_fft_file(self, data_dir, z_idx):
+        """Loads and organizes information from the random catalog FFTs"""
 
-        Returns:
-            Wij2: FFT object calculated by the Survey_Window_kernels class
-        """
-        Wij = np.load(self.fft_file)
-        self.Lm=len(Wij[0]) #size of FFT
+        fft_file = data_dir+'FFTWinFun.npy'
+        if not os.path.exists(fft_file):
+            print("ERROR! could not find fft file", fft_file)
+            raise IOError
 
-        Wij2=[]
-        for i in range(len(Wij)//2): #W22
-            Wij2.append(self.fft(Wij[i]))
+        Wij = np.load(fft_file)
+        self.Lm = Wij.shape[1] #size of FFT
 
-        for i in range(len(Wij)//2,len(Wij)): #W12, I'm taking conjugate as that is used in the 'WinFun' function later
-            Wij2.append(conj(self.fft(Wij[i])))
+        self.Wij = []
+        for i in range(Wij.shape[1]//2): #W22
+            self.Wij.append(self.fft(Wij[z_idx][i]))
 
-        return Wij2
+        for i in range(Wij.shape[1]//2,Wij.shape[1]): #W12, I'm taking conjugate as that is used in the 'WinFun' function later
+            self.Wij.append(conj(self.fft(Wij[z_idx][i])))
     
-    def calc_gaussian_window_function(self, bin_idx : int, kmodes_sampled : int =400):
+    def calc_gaussian_window_function(self, kbin_idx : int, kmodes_sampled : int =400):
         """Returns the window function of a specific k-bin for l=0,2,and 4 auto + cross covariance
         
         NOTE: This function is computationally expensive and should be run in parralel
         
         Args:
-            bin_idx: the specific k-bin index to calculate the window function for
+            kbin_idx: the specific k-bin index to calculate the window function for
+            zbin_idx: the specific redshift bin to calculate the window function for
             kmodes_sampled: The number of random samples to use
         """
-
         [W, Wxx, Wxy, Wxz, Wyy, Wyz, Wzz, Wxxxx, Wxxxy, Wxxxz, Wxxyy, Wxxyz, Wxxzz, Wxyyy, Wxyyz, Wxyzz,\
         Wxzzz, Wyyyy, Wyyyz, Wyyzz, Wyzzz, Wzzzz, W12, W12xx, W12xy, W12xz, W12yy, W12yz, W12zz, W12xxxx,\
         W12xxxy, W12xxxz, W12xxyy, W12xxyz, W12xxzz, W12xyyy, W12xyyz, W12xyzz, W12xzzz, W12yyyy, W12yyyz,\
-        W12yyzz, W12yzzz, W12zzzz] = self.Wij2
+        W12yyzz, W12yzzz, W12zzzz] = self.Wij
 
         avgWij=np.zeros((2*3+1,15,6)); avgW00=np.zeros((2*3+1,15),dtype='<c8');
         avgW22=avgW00.copy(); avgW44=avgW00.copy(); avgW20=avgW00.copy(); avgW40=avgW00.copy(); avgW42=avgW00.copy()
@@ -414,32 +416,31 @@ class Gaussian_Window_Kernels():
         for i in range(2*self.icut+1): 
             ix[i,:,:]+=i-self.icut; iy[:,i,:]+=i-self.icut; iz[:,:,i]+=i-self.icut
             
-        if (kmodes_sampled<self.Bin_ModeNum[bin_idx]):
+        if (kmodes_sampled<self.Bin_ModeNum[kbin_idx]):
             norm=kmodes_sampled
-            sampled=(np.random.rand(kmodes_sampled)*self.Bin_ModeNum[bin_idx]).astype(int)
+            sampled=(np.random.rand(kmodes_sampled)*self.Bin_ModeNum[kbin_idx]).astype(int)
         else:
-            norm=self.Bin_ModeNum[bin_idx]
-            sampled=np.arange(self.Bin_ModeNum[bin_idx],dtype=int)
+            norm=self.Bin_ModeNum[kbin_idx]
+            sampled=np.arange(self.Bin_ModeNum[kbin_idx],dtype=int)
         
         # Randomly select a mode in the k1 bin
         for n in sampled:
-            [ik1x,ik1y,ik1z,rk1]=self.Bin_kmodes[bin_idx][n]
+            [ik1x,ik1y,ik1z,rk1]=self.Bin_kmodes[kbin_idx][n]
             if (rk1==0.): k1xh=0; k1yh=0; k1zh=0
             else: k1xh=ik1x/rk1; k1yh=ik1y/rk1; k1zh=ik1z/rk1
                 
-        # Build a 3D array of modes around the selected mode   
+            # Build a 3D array of modes around the selected mode   
             k2xh=ik1x-ix; k2yh=ik1y-iy; k2zh=ik1z-iz
             rk2=np.sqrt(k2xh**2+k2yh**2+k2zh**2)
-            sort=(rk2*self.kfun/self.kbin_width).astype(int)-bin_idx # to decide later which shell the k2 mode belongs to
+            sort=(rk2*self.kfun/self.kbin_width).astype(int)-kbin_idx # to decide later which shell the k2 mode belongs to
             ind=(rk2==0)
             if (ind.any()>0): rk2[ind]=1e10
             k2xh/=rk2; k2yh/=rk2; k2zh/=rk2
             #k2 hat arrays built
             
-        # Now calculating window multipole kernels by taking dot products of cartesian FFTs with k1-hat, k2-hat arrays
-        # W corresponds to W22(k) and Wc corresponds to conjugate of W22(k)
-        # L(i) refers to multipoles
-            
+            # Now calculating window multipole kernels by taking dot products of cartesian FFTs with k1-hat, k2-hat arrays
+            # W corresponds to W22(k) and Wc corresponds to conjugate of W22(k)
+            # L(i) refers to multipoles
             W_L0 = W
             Wc_L0 = conj(W)
             
@@ -637,16 +638,16 @@ class Gaussian_Window_Kernels():
                     avgW42[i+3,j]+=np.sum(C42exp[j][ind])
                 
         for i in range(0,2*3+1):
-            if(i+bin_idx-3>=self.nBins or i+bin_idx-3<0): 
+            if(i+kbin_idx-3>=self.nBins or i+kbin_idx-3<0): 
                 avgW00[i]*=0; avgW22[i]*=0; avgW44[i]*=0
                 avgW20[i]*=0; avgW40[i]*=0; avgW42[i]*=0
                 continue
-            avgW00[i]=avgW00[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW22[i]=avgW22[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW44[i]=avgW44[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW20[i]=avgW20[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW40[i]=avgW40[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
-            avgW42[i]=avgW42[i]/(norm*self.Bin_ModeNum[bin_idx+i-3]*self.I22**2)
+            avgW00[i]=avgW00[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
+            avgW22[i]=avgW22[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
+            avgW44[i]=avgW44[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
+            avgW20[i]=avgW20[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
+            avgW40[i]=avgW40[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
+            avgW42[i]=avgW42[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
         
         avgWij[:,:,0]=2.*np.real(avgW00); avgWij[:,:,1]=25.*np.real(avgW22); avgWij[:,:,2]=81.*np.real(avgW44);
         avgWij[:,:,3]=5.*2.*np.real(avgW20); avgWij[:,:,4]=9.*2.*np.real(avgW40); avgWij[:,:,5]=45.*np.real(avgW42);

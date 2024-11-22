@@ -14,18 +14,13 @@ def main():
         return 0
 
     print("\nGenerating Gaussian covariance matrix...")
-
-    if not os.path.exists(config_dict["output_dir"] + config_dict["window_file"]):
-        print("ERROR! Can't find window function file! Aborting...")
-        return 0
-
-    k_centers = np.loadtxt(config_dict["input_dir"]+config_dict["k_array_file"])
-
-    model = covariance_model(2, 2, 
+    num_zbins = int(len(config_dict["zbins"]) / 2)
+    model = covariance_model(config_dict["num_tracers"],
+                             num_zbins, 
                              config_dict["n_galaxy"], 
                              config_dict["alpha"], 
-                             k_centers, 
-                             config_dict["output_dir"] + config_dict["window_file"])
+                             config_dict["input_dir"] + config_dict["k_array_file"], 
+                             config_dict["output_dir"] + config_dict["window_file_prefix"])
     model.load_power_spectrum(config_dict["input_dir"] + config_dict["pk_galaxy_file"])
     C_G = model.get_mt_gaussian_covariance()
 
@@ -37,9 +32,10 @@ def main():
         except:
             print("ERROR! Covariance matrix for zbin " + str(z) + " is not positive definite!")
 
+    keys = range(model.num_zbins)
     save_file = config_dict["output_dir"] + config_dict["covariance_file"]
     print("Saving to " + save_file)
-    np.save(save_file, C_G)
+    np.savez(save_file, *C_G, kwds=keys)
 
 if __name__ == "__main__":
     main()
