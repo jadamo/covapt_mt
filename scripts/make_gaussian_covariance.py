@@ -32,10 +32,13 @@ def main():
         except:
             print("ERROR! Covariance matrix for zbin " + str(z) + " is not positive definite!")
 
-    keys = range(model.num_zbins)
+    keys = list(range(model.num_zbins))
     save_file = config_dict["output_dir"] + config_dict["covariance_file"]
+    save_data = {}
+    for z in range(model.num_zbins):
+        save_data["zbin_"+str(keys[z])] = C_G[z]
     print("Saving to " + save_file)
-    np.savez(save_file, *C_G, kwds=keys)
+    np.savez(save_file,**save_data)
 
 if __name__ == "__main__":
     main()

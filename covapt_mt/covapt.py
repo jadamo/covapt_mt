@@ -101,12 +101,12 @@ class covariance_model():
             pk_galaxy = np.zeros((self.num_tracers, self.num_tracers, 5, self.num_kbins[z]))
             for i, j in itertools.product(range(self.num_tracers), repeat=2):
                 if i > j: continue
-                self.pk_galaxy[i, j, 0, :] = pk_galaxy_raw[z][idx, 0, :]
-                self.pk_galaxy[j, i, 0, :] = pk_galaxy_raw[z][idx, 0, :]
-                self.pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z][idx, 1, :]
-                self.pk_galaxy[j, i, 2, :] = pk_galaxy_raw[z][idx, 1, :]
-                self.pk_galaxy[i, j, 4, :] = pk_galaxy_raw[z][idx, 2, :]
-                self.pk_galaxy[j, i, 4, :] = pk_galaxy_raw[z][idx, 2, :]
+                pk_galaxy[i, j, 0, :] = pk_galaxy_raw[z][idx, 0, :]
+                pk_galaxy[j, i, 0, :] = pk_galaxy_raw[z][idx, 0, :]
+                pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z][idx, 2, :]
+                pk_galaxy[j, i, 2, :] = pk_galaxy_raw[z][idx, 2, :]
+                pk_galaxy[i, j, 4, :] = pk_galaxy_raw[z][idx, 4, :]
+                pk_galaxy[j, i, 4, :] = pk_galaxy_raw[z][idx, 4, :]
                 idx +=1
             self.pk_galaxy.append(pk_galaxy)
             
@@ -119,13 +119,12 @@ class covariance_model():
             key = "k_"+str(zbin)
             self.k.append(k_data[key])
             self.num_kbins[zbin] = len(self.k[zbin])
-            
+
     #-------------------------------------------------------------------
     def get_k_bins(self):
         return self.k
     
     def set_number_densities(self, alpha, n_galaxy):
-        self.num_tracers = len(n_galaxy)
         self.alpha_mt =np.zeros((self.num_tracers,self.num_tracers))
         np.fill_diagonal(self.alpha_mt, alpha)
         self.invng_mt =np.zeros((self.num_tracers,self.num_tracers))
@@ -376,31 +375,32 @@ class covariance_model():
         if pk_galaxy == None:
             pk_galaxy = self.pk_galaxy
 
-        num_tracers = pk_galaxy.shape[1]
-        n_multi = int(num_tracers*(num_tracers+1)/2) # <- total # of auto + cross spectra
-        covMat=np.zeros((self.num_zbins, 2*self.num_kbins*n_multi,2*self.num_kbins*n_multi))
+        n_multi = int(self.num_tracers*(self.num_tracers+1)/2) # <- total # of auto + cross spectra
+        print(self.num_tracers, n_multi)
+        covMat_all = []
         for z in range(self.num_zbins):
+            covMat=np.zeros((2*self.num_kbins[z]*n_multi,2*self.num_kbins[z]*n_multi))
             n_AB = -1
-            for A, B in itertools.product(range(num_tracers), repeat=2):
+            for A, B in itertools.product(range(self.num_tracers), repeat=2):
                 if B < A: continue
                 n_AB += 1
                 n_CD = -1
-                for C, D in itertools.product(range(num_tracers), repeat=2):
+                for C, D in itertools.product(range(self.num_tracers), repeat=2):
                     if D < C: continue
                     n_CD += 1
-                    for i in range(self.num_kbins):
+                    for i in range(self.num_kbins[z]):
                         temp=self.Cij_MT(i,self.WijFile[z][i], pk_galaxy[z], A=A,B=B,C=C,D=D)
                         C00=temp[:,0]; C22=temp[:,1]; C20=temp[:,3]
                         for j in range(-3,4):
-                            if(i+j>=0 and i+j<self.num_kbins):
-                                covMat[z, n_AB*2*self.num_kbins+i,n_CD*2*self.num_kbins+i+j]=C00[j+3]
-                                covMat[z, n_AB*2*self.num_kbins+self.num_kbins+i,n_CD*2*self.num_kbins+self.num_kbins+i+j]=C22[j+3]
-                                covMat[z, n_AB*2*self.num_kbins+self.num_kbins+i,n_CD*2*self.num_kbins+i+j]=C20[j+3]
-                                covMat[z, n_AB*2*self.num_kbins+i,n_CD*2*self.num_kbins+self.num_kbins+i+j]=C20[j+3]
+                            if(i+j>=0 and i+j<self.num_kbins[z]):
+                                covMat[n_AB*2*self.num_kbins[z]+i,n_CD*2*self.num_kbins[z]+i+j]=C00[j+3]
+                                covMat[n_AB*2*self.num_kbins[z]+self.num_kbins[z]+i,n_CD*2*self.num_kbins+self.num_kbins[z]+i+j]=C22[j+3]
+                                covMat[n_AB*2*self.num_kbins[z]+self.num_kbins[z]+i,n_CD*2*self.num_kbins[z]+i+j]=C20[j+3]
+                                covMat[n_AB*2*self.num_kbins[z]+i,n_CD*2*self.num_kbins[z]+self.num_kbins[z]+i+j]=C20[j+3]
                         #covMat[n_AB*2*num_kbins:n_AB*2*num_kbins+num_kbins,n_CD*2*num_kbins+num_kbins:n_CD*2*num_kbins+num_kbins*2]=np.transpose(covMat[num_kbins:num_kbins*2,:num_kbins])
             
-            covMat[z]=(covMat[z]+np.transpose(covMat[z]))/2.
-        return(covMat)
+            covMat_all.append((covMat+np.transpose(covMat))/2.)
+        return(covMat_all)
 
     #-------------------------------------------------------------------
     def get_gaussian_covariance(self, params, return_Pk=False, Pk_galaxy=[]):

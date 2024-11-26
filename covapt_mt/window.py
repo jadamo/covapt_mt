@@ -10,13 +10,16 @@ import dask.array as da
 import itertools as itt
 
 from nbodykit import set_options
-set_options(global_cache_size=2e9)
+#set_options(global_cache_size=2e9)
 
-class Survey_Window_Kernels():
+from covapt_mt.utils import sample_from_shell, nmodes
+
+class Survey_Geometry_Kernels():
     """
-    Class that handles both Super-Sample Covariance (SSC) window function and FFT 
+    Class that contains functions needed to calculate the covariance matrix window functions
+    given a survey-like geometry 
     """
-    def __init__ (self, h:float, Om0:float, zbins, 
+    def __init__ (self, h:float, Om0:float, zbins, k_centers:list, box_size,
                   data_dir="", random_file=""):
         """Constructs Survey_Window_Kernels object
 
@@ -35,6 +38,32 @@ class Survey_Window_Kernels():
 
         # convert redshifts to physical distances based on some catalog cosmology
         self.convert_to_distances(h, Om0)
+
+        # calculate bin edges and width from the k centers
+        self.get_k_bin_edges(k_centers)
+
+        # number of k-bins on each side of the diaganal to calculate
+        # Should be kept small, since the Gaussian covariance drops quickly away from the diag
+        self.delta_k_max = 3
+
+        # length of box when computing FFTs
+        self.box_size = box_size
+
+        # fundamental k mode
+        self.kfun=2.*np.pi/self.box_size
+
+        #if self.kfun > self.kbin_edges[1]:
+        #    print("WARNING! fundamental k mode is larger than the smallest k bin! This might cause issues!")
+
+        # As the window falls steeply with k, only low-k regions are needed for the calculation.
+        # Therefore cutting out the high-k modes in the FFTs using the self.icut parameter
+        self.icut=15; # needs to be less than Lm//2 (Lm: size of FFT)
+
+        # Why are there 2 of these? 
+        self.Lm2 = []
+        for z in range(self.num_zbins):
+            self.Lm2.append(int(self.kbin_width[z]*self.nBins[z]/self.kfun)+1)
+            assert self.icut < (self.Lm2[z] / 2)
 
     def load_survey_randoms(self, zbins, data_dir, random_file_prefix=""):
         """Loads random survey catalog from an hdf5 file
@@ -56,21 +85,6 @@ class Survey_Window_Kernels():
                 raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
             self.randoms.append(HDFCatalog(data_dir+random_file))
             self.I22[bin] = np.sum(self.randoms[bin]['NZ']**1 * self.randoms[bin]['WEIGHT_FKP']**2)
-
-    # def split_redshift_bins(self, zbins):
-    #     """splits random catalog into seperate redshift bins based on the zbins config options"""
-    #     self.num_zbins = int(len(zbins) / 2)
-    #     self.I22 = np.zeros(self.num_zbins)
-
-    #     for bin in range(self.num_zbins):
-    #         bin_name = "bin"+str(bin)
-    #         self.randoms[bin_name+"/RA"] = self.randoms["RA"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
-    #         self.randoms[bin_name+"/DEC"] = self.randoms["DEC"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
-    #         self.randoms[bin_name+"/NZ"] = self.randoms["NZ"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
-    #         self.randoms[bin_name+"/WEIGHT_FKP"] = self.randoms["WEIGHT_FKP"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
-    #         self.randoms[bin_name+"/Z"] = self.randoms["Z"][(self.randoms["Z"] > zbins[bin_name+"_lo"] & self.randoms["Z"] <= zbins[bin_name+"_hi"])]
-
-    #         self.I22[bin] = np.sum(self.randoms[bin_name+'/NZ']**1 * self.randoms[bin_name+'/WEIGHT_FKP']**2)
 
     def convert_to_distances(self, h:float, Om0:float):
         """Converts catalog redshifts to physical distances
@@ -150,6 +164,25 @@ class Survey_Window_Kernels():
                     export[bin, ind]=Wij; ind+=1
 
         return export
+
+    def load_fft_file(self, data_dir, z_idx):
+        """Loads and organizes information from the random catalog FFTs"""
+
+        self.randoms = None # <- delete cashed randoms to save memory / allow multiprocessing to work
+        fft_file = data_dir+'FFTWinFun.npy'
+        if not os.path.exists(fft_file):
+            print("ERROR! could not find fft file", fft_file)
+            raise IOError
+
+        Wij = np.load(fft_file)
+        self.Lm = Wij.shape[1] #size of FFT
+
+        self.Wij = []
+        for i in range(Wij.shape[1]//2): #W22
+            self.Wij.append(self.fft(Wij[z_idx][i]))
+
+        for i in range(Wij.shape[1]//2,Wij.shape[1]): #W12, I'm taking conjugate as that is used in the 'WinFun' function later
+            self.Wij.append(conj(self.fft(Wij[z_idx][i])))
 
     def calc_gaussian_kernels(self, Nmesh=48, BoxSize=3750):
         """Calculates the gaussian kernels required for the Gaussian window function.
@@ -269,56 +302,6 @@ class Survey_Window_Kernels():
         P_W[1:7,0]=[1,0,0,1,0,1]; P_W[7:13,0]=[1,0,0,1,0,1]; P_W[13:,0]=[1,0,0,0,1,0,0,0,1]
         return P_W
 
-# ------------------------------------------------------------------
-class Gaussian_Window_Kernels():
-    """Defines the kernels and calculations for the window function used in the
-    Gaussian term of the covariance matrix.
-
-    NOTE: This constructor needs FFT randoms to be pre-calculated, which you can do with the Survey_Window_Kernels class
-    """
-
-    def __init__(self, data_dir, k_centers:list, z_idx:int, box_size, I22):
-        """ Gaussian window function constructor
-        
-        Args:
-            data_dir: location of fft files
-            k_centers: np arrays of k bin centers
-            z_idx : index of redshift bin to use
-            box_size: length of box used to compute FFTs in Mpc/h
-            I22: Normalization factor calculated from random catalogs
-
-        Raises:
-            AssertionError: If the box size is too small
-        """
-        # calculate bin edges and width from the k centers
-        self.get_k_bin_edges(k_centers)
-
-        # length of box when computing FFTs
-        self.Lbox = box_size
-
-        # fundamental k mode
-        self.kfun=2.*np.pi/self.Lbox
-
-        #if self.kfun > self.kbin_edges[1]:
-        #    print("WARNING! fundamental k mode is larger than the smallest k bin! This might cause issues!")
-
-        # As the window falls steeply with k, only low-k regions are needed for the calculation.
-        # Therefore cutting out the high-k modes in the FFTs using the self.icut parameter
-        self.icut=15; # needs to be less than Lm//2 (Lm: size of FFT)
-
-        # from eq 3 of ??
-        #self.I22=437.183365
-        self.I22 = I22
-
-        # Why are there 2 of these? 
-        self.Lm2 = int(self.kbin_width*self.nBins/self.kfun)+1
-        assert self.icut < (self.Lm2 / 2)
-
-        # Load survey random FFTs
-        self.load_fft_file(data_dir, z_idx)
-
-        self.Bin_kmodes, self.Bin_ModeNum = self.get_shell_modes()
-
     def get_k_bin_edges(self, k_centers):
         """calculates bin edges from an array of bin centers
 
@@ -326,15 +309,19 @@ class Gaussian_Window_Kernels():
             k_centers: An np array of evenly-spaced bin centers
         """
 
-        self.kbin_width = k_centers[-1] - k_centers[-2]
-        self.nBins = len(k_centers)
-        kbin_half_width = self.kbin_width / 2.
-        kbin_edges = np.zeros(len(k_centers)+1)
-        kbin_edges[0] = k_centers[0] - kbin_half_width
+        self.kbin_width = []
+        self.kbin_edges = []
+        self.nBins = []
+        for z in range(self.num_zbins):
+            self.kbin_width.append(k_centers[z][-1] - k_centers[z][-2])
+            self.nBins.append(len(k_centers[z]))
+            kbin_half_width = self.kbin_width[z] / 2.
+            self.kbin_edges.append(np.zeros(len(k_centers[z])+1))
+            self.kbin_edges[z][0] = k_centers[z][0] - kbin_half_width
 
-        assert kbin_edges[0] > 0.
-        for i in range(1, len(kbin_edges)):
-            kbin_edges[i] = k_centers[i-1] + kbin_half_width
+            assert self.kbin_edges[z][0] > 0.
+            for i in range(1, len(self.kbin_edges[z])):
+                self.kbin_edges[z][i] = k_centers[z][i-1] + kbin_half_width
 
     def fft(self, temp):
         """Does some shifting of the fft arrays"""
@@ -348,53 +335,39 @@ class Gaussian_Window_Kernels():
     
         return(temp2[ia-self.icut:ia+self.icut+1,ia-self.icut:ia+self.icut+1,ia-self.icut:ia+self.icut+1])
 
-    def get_shell_modes(self):
-        """Calculates the specific kmodes present in a given k-bin based on the given survey propereies
+    # def get_shell_modes(self):
+    #     """Calculates the specific kmodes present in a given k-bin based on the given survey propereies
         
-        Raises:
-            AssertionError: If one of the given k-bins has 0 k modes. This can happen if your box size is too small relative to your k-bin width
-        """
-        [ix,iy,iz] = np.zeros((3,2*self.Lm2+1,2*self.Lm2+1,2*self.Lm2+1))
-        Bin_kmodes=[]
-        Bin_ModeNum=np.zeros(self.nBins,dtype=int)
+    #     Raises:
+    #         AssertionError: If one of the given k-bins has 0 k modes. This can happen if your box size is too small relative to your k-bin width
+    #     """
+    #     [ix,iy,iz] = np.zeros((3,2*self.Lm2+1,2*self.Lm2+1,2*self.Lm2+1))
+    #     Bin_kmodes=[]
+    #     Bin_ModeNum=np.zeros(self.nBins,dtype=int)
 
-        for i in range(self.nBins): Bin_kmodes.append([])
-        for i in range(len(ix)):
-            ix[i,:,:]+=i-self.Lm2
-            iy[:,i,:]+=i-self.Lm2
-            iz[:,:,i]+=i-self.Lm2
+    #     for i in range(self.nBins): Bin_kmodes.append([])
+    #     for i in range(len(ix)):
+    #         ix[i,:,:]+=i-self.Lm2
+    #         iy[:,i,:]+=i-self.Lm2
+    #         iz[:,:,i]+=i-self.Lm2
 
-        rk=np.sqrt(ix**2+iy**2+iz**2)
-        sort=(rk*self.kfun/self.kbin_width).astype(int)
+    #     rk=np.sqrt(ix**2+iy**2+iz**2)
+    #     sort=(rk*self.kfun/self.kbin_width).astype(int)
 
-        for i in range(self.nBins):
-            ind=(sort==i)
-            Bin_ModeNum[i]=len(ix[ind])
-            Bin_kmodes[i]=np.hstack((ix[ind].reshape(-1,1),iy[ind].reshape(-1,1),iz[ind].reshape(-1,1),rk[ind].reshape(-1,1)))
+    #     for i in range(self.nBins):
+    #         ind=(sort==i)
+    #         Bin_ModeNum[i]=len(ix[ind])
+    #         Bin_kmodes[i]=np.hstack((ix[ind].reshape(-1,1),iy[ind].reshape(-1,1),iz[ind].reshape(-1,1),rk[ind].reshape(-1,1)))
         
-        assert np.all(Bin_ModeNum != 0), "ERROR! some bins have 0 k modes! Your box-size or kbin-width is probably too small"
+    #     assert np.all(Bin_ModeNum != 0), "ERROR! some bins have 0 k modes! Your box-size or kbin-width is probably too small"
         
-        return Bin_kmodes, Bin_ModeNum
-
-    def load_fft_file(self, data_dir, z_idx):
-        """Loads and organizes information from the random catalog FFTs"""
-
-        fft_file = data_dir+'FFTWinFun.npy'
-        if not os.path.exists(fft_file):
-            print("ERROR! could not find fft file", fft_file)
-            raise IOError
-
-        Wij = np.load(fft_file)
-        self.Lm = Wij.shape[1] #size of FFT
-
-        self.Wij = []
-        for i in range(Wij.shape[1]//2): #W22
-            self.Wij.append(self.fft(Wij[z_idx][i]))
-
-        for i in range(Wij.shape[1]//2,Wij.shape[1]): #W12, I'm taking conjugate as that is used in the 'WinFun' function later
-            self.Wij.append(conj(self.fft(Wij[z_idx][i])))
+    #     return Bin_kmodes, Bin_ModeNum
     
-    def calc_gaussian_window_function(self, kbin_idx : int, kmodes_sampled : int =400):
+    def ell_factor(self, l1, l2):
+        """window function prefactors"""
+        return (2*l1 + 1) * (2*l2 + 1) * (2 if 0 in (l1, l2) else 1)
+
+    def calc_gaussian_window_function(self, kbin_idx : int, zbin_idx, kmodes_sampled : int =400):
         """Returns the window function of a specific k-bin for l=0,2,and 4 auto + cross covariance
         
         NOTE: This function is computationally expensive and should be run in parralel
@@ -409,34 +382,44 @@ class Gaussian_Window_Kernels():
         W12xxxy, W12xxxz, W12xxyy, W12xxyz, W12xxzz, W12xyyy, W12xyyz, W12xyzz, W12xzzz, W12yyyy, W12yyyz,\
         W12yyzz, W12yzzz, W12zzzz] = self.Wij
 
-        avgWij=np.zeros((2*3+1,15,6)); avgW00=np.zeros((2*3+1,15),dtype='<c8');
-        avgW22=avgW00.copy(); avgW44=avgW00.copy(); avgW20=avgW00.copy(); avgW40=avgW00.copy(); avgW42=avgW00.copy()
+        avgWij=np.zeros((2*self.delta_k_max+1,15,6))
         [ix,iy,iz,k2xh,k2yh,k2zh]=np.zeros((6,2*self.icut+1,2*self.icut+1,2*self.icut+1))
         
         for i in range(2*self.icut+1): 
             ix[i,:,:]+=i-self.icut; iy[:,i,:]+=i-self.icut; iz[:,:,i]+=i-self.icut
             
-        if (kmodes_sampled<self.Bin_ModeNum[kbin_idx]):
-            norm=kmodes_sampled
-            sampled=(np.random.rand(kmodes_sampled)*self.Bin_ModeNum[kbin_idx]).astype(int)
-        else:
-            norm=self.Bin_ModeNum[kbin_idx]
-            sampled=np.arange(self.Bin_ModeNum[kbin_idx],dtype=int)
-        
-        # Randomly select a mode in the k1 bin
-        for n in sampled:
-            [ik1x,ik1y,ik1z,rk1]=self.Bin_kmodes[kbin_idx][n]
-            if (rk1==0.): k1xh=0; k1yh=0; k1zh=0
-            else: k1xh=ik1x/rk1; k1yh=ik1y/rk1; k1zh=ik1z/rk1
+        # randomly select kmodes_sampled number of k-modes
+        kmodes = np.array([[sample_from_shell(kmin/self.kfun, kmax/self.kfun) for _ in range(
+                           kmodes_sampled)] for kmin, kmax in zip(self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])])
+        Nmodes = nmodes(self.box_size**3, self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])
+        # if (kmodes_sampled<self.Bin_ModeNum[kbin_idx]):
+        #     norm=kmodes_sampled
+        #     sampled=(np.random.rand(kmodes_sampled)*self.Bin_ModeNum[kbin_idx]).astype(int)
+        # else:
+        #     norm=self.Bin_ModeNum[kbin_idx]
+        #     sampled=np.arange(self.Bin_ModeNum[kbin_idx],dtype=int)
+
+        # Loop thru randomly-selected k-modes
+        for mode in range(kmodes_sampled):
+            [ik1x,ik1y,ik1z,rk1] = kmodes[kbin_idx, mode, :]
+            if (rk1<=1e-10): 
+                k1xh=0
+                k1yh=0
+                k1zh=0
+            else:
+                k1xh=ik1x/rk1
+                k1yh=ik1y/rk1
+                k1zh=ik1z/rk1
                 
             # Build a 3D array of modes around the selected mode   
-            k2xh=ik1x-ix; k2yh=ik1y-iy; k2zh=ik1z-iz
+            k2xh=ik1x-ix
+            k2yh=ik1y-iy
+            k2zh=ik1z-iz
             rk2=np.sqrt(k2xh**2+k2yh**2+k2zh**2)
             sort=(rk2*self.kfun/self.kbin_width).astype(int)-kbin_idx # to decide later which shell the k2 mode belongs to
             ind=(rk2==0)
             if (ind.any()>0): rk2[ind]=1e10
             k2xh/=rk2; k2yh/=rk2; k2zh/=rk2
-            #k2 hat arrays built
             
             # Now calculating window multipole kernels by taking dot products of cartesian FFTs with k1-hat, k2-hat arrays
             # W corresponds to W22(k) and Wc corresponds to conjugate of W22(k)
@@ -448,16 +431,16 @@ class Gaussian_Window_Kernels():
             
             W_k1L2=1.5*xx-0.5*W
             W_k2L2=1.5*(Wxx*k2xh**2+Wyy*k2yh**2+Wzz*k2zh**2 \
-            +2.*Wxy*k2xh*k2yh+2.*Wyz*k2yh*k2zh+2.*Wxz*k2zh*k2xh)-0.5*W
+                +2.*Wxy*k2xh*k2yh+2.*Wyz*k2yh*k2zh+2.*Wxz*k2zh*k2xh)-0.5*W
             Wc_k1L2=conj(W_k1L2)
             Wc_k2L2=conj(W_k2L2)
             
             W_k1L4=35./8.*(Wxxxx*k1xh**4 +Wyyyy*k1yh**4+Wzzzz*k1zh**4 \
-        +4.*Wxxxy*k1xh**3*k1yh +4.*Wxxxz*k1xh**3*k1zh +4.*Wxyyy*k1yh**3*k1xh \
-        +4.*Wyyyz*k1yh**3*k1zh +4.*Wxzzz*k1zh**3*k1xh +4.*Wyzzz*k1zh**3*k1yh \
-        +6.*Wxxyy*k1xh**2*k1yh**2+6.*Wxxzz*k1xh**2*k1zh**2+6.*Wyyzz*k1yh**2*k1zh**2 \
-        +12.*Wxxyz*k1xh**2*k1yh*k1zh+12.*Wxyyz*k1yh**2*k1xh*k1zh +12.*Wxyzz*k1zh**2*k1xh*k1yh) \
-        -5./2.*W_k1L2 -7./8.*W_L0
+                +4.*Wxxxy*k1xh**3*k1yh +4.*Wxxxz*k1xh**3*k1zh +4.*Wxyyy*k1yh**3*k1xh \
+                +4.*Wyyyz*k1yh**3*k1zh +4.*Wxzzz*k1zh**3*k1xh +4.*Wyzzz*k1zh**3*k1yh \
+                +6.*Wxxyy*k1xh**2*k1yh**2+6.*Wxxzz*k1xh**2*k1zh**2+6.*Wyyzz*k1yh**2*k1zh**2 \
+                +12.*Wxxyz*k1xh**2*k1yh*k1zh+12.*Wxyyz*k1yh**2*k1xh*k1zh +12.*Wxyzz*k1zh**2*k1xh*k1yh) \
+                -5./2.*W_k1L2 -7./8.*W_L0
             Wc_k1L4=conj(W_k1L4)
             
             k1k2=Wxxxx*(k1xh*k2xh)**2+Wyyyy*(k1yh*k2yh)**2+Wzzzz*(k1zh*k2zh)**2 \
@@ -475,11 +458,11 @@ class Gaussian_Window_Kernels():
                 +Wxyzz*(k1yh*k1xh*k2zh**2+k1zh**2*k2yh*k2xh+2.*k1zh*k2zh*(k1xh*k2yh+k1yh*k2xh))*2
             
             W_k2L4=35./8.*(Wxxxx*k2xh**4 +Wyyyy*k2yh**4+Wzzzz*k2zh**4 \
-        +4.*Wxxxy*k2xh**3*k2yh +4.*Wxxxz*k2xh**3*k2zh +4.*Wxyyy*k2yh**3*k2xh \
-        +4.*Wyyyz*k2yh**3*k2zh +4.*Wxzzz*k2zh**3*k2xh +4.*Wyzzz*k2zh**3*k2yh \
-        +6.*Wxxyy*k2xh**2*k2yh**2+6.*Wxxzz*k2xh**2*k2zh**2+6.*Wyyzz*k2yh**2*k2zh**2 \
-        +12.*Wxxyz*k2xh**2*k2yh*k2zh+12.*Wxyyz*k2yh**2*k2xh*k2zh +12.*Wxyzz*k2zh**2*k2xh*k2yh) \
-        -5./2.*W_k2L2 -7./8.*W_L0
+                +4.*Wxxxy*k2xh**3*k2yh +4.*Wxxxz*k2xh**3*k2zh +4.*Wxyyy*k2yh**3*k2xh \
+                +4.*Wyyyz*k2yh**3*k2zh +4.*Wxzzz*k2zh**3*k2xh +4.*Wyzzz*k2zh**3*k2yh \
+                +6.*Wxxyy*k2xh**2*k2yh**2+6.*Wxxzz*k2xh**2*k2zh**2+6.*Wyyzz*k2yh**2*k2zh**2 \
+                +12.*Wxxyz*k2xh**2*k2yh*k2zh+12.*Wxyyz*k2yh**2*k2xh*k2zh +12.*Wxyzz*k2zh**2*k2xh*k2yh) \
+                -5./2.*W_k2L2 -7./8.*W_L0
             Wc_k2L4=conj(W_k2L4)
             
             W_k1L2_k2L2= 9./4.*k1k2 -3./4.*xx -1./2.*W_k2L2
@@ -509,20 +492,20 @@ class Gaussian_Window_Kernels():
             W12_L0 = W12
             W12_k1L2=1.5*xxW12-0.5*W12
             W12_k1L4=35./8.*(W12xxxx*k1xh**4 +W12yyyy*k1yh**4+W12zzzz*k1zh**4 \
-        +4.*W12xxxy*k1xh**3*k1yh +4.*W12xxxz*k1xh**3*k1zh +4.*W12xyyy*k1yh**3*k1xh \
-        +6.*W12xxyy*k1xh**2*k1yh**2+6.*W12xxzz*k1xh**2*k1zh**2+6.*W12yyzz*k1yh**2*k1zh**2 \
-        +12.*W12xxyz*k1xh**2*k1yh*k1zh+12.*W12xyyz*k1yh**2*k1xh*k1zh +12.*W12xyzz*k1zh**2*k1xh*k1yh) \
-        -5./2.*W12_k1L2 -7./8.*W12_L0
+                +4.*W12xxxy*k1xh**3*k1yh +4.*W12xxxz*k1xh**3*k1zh +4.*W12xyyy*k1yh**3*k1xh \
+                +6.*W12xxyy*k1xh**2*k1yh**2+6.*W12xxzz*k1xh**2*k1zh**2+6.*W12yyzz*k1yh**2*k1zh**2 \
+                +12.*W12xxyz*k1xh**2*k1yh*k1zh+12.*W12xyyz*k1yh**2*k1xh*k1zh +12.*W12xyzz*k1zh**2*k1xh*k1yh) \
+                -5./2.*W12_k1L2 -7./8.*W12_L0
             W12_k1L4_k2L2=2/7.*W12_k1L2+20/77.*W12_k1L4
             W12_k1L4_k2L4=1/9.*W12_L0+100/693.*W12_k1L2+162/1001.*W12_k1L4
             W12_k2L2=1.5*(W12xx*k2xh**2+W12yy*k2yh**2+W12zz*k2zh**2\
-            +2.*W12xy*k2xh*k2yh+2.*W12yz*k2yh*k2zh+2.*W12xz*k2zh*k2xh)-0.5*W12
+                +2.*W12xy*k2xh*k2yh+2.*W12yz*k2yh*k2zh+2.*W12xz*k2zh*k2xh)-0.5*W12
             W12_k2L4=35./8.*(W12xxxx*k2xh**4 +W12yyyy*k2yh**4+W12zzzz*k2zh**4 \
-        +4.*W12xxxy*k2xh**3*k2yh +4.*W12xxxz*k2xh**3*k2zh +4.*W12xyyy*k2yh**3*k2xh \
-        +4.*W12yyyz*k2yh**3*k2zh +4.*W12xzzz*k2zh**3*k2xh +4.*W12yzzz*k2zh**3*k2yh \
-        +6.*W12xxyy*k2xh**2*k2yh**2+6.*W12xxzz*k2xh**2*k2zh**2+6.*W12yyzz*k2yh**2*k2zh**2 \
-        +12.*W12xxyz*k2xh**2*k2yh*k2zh+12.*W12xyyz*k2yh**2*k2xh*k2zh +12.*W12xyzz*k2zh**2*k2xh*k2yh) \
-        -5./2.*W12_k2L2 -7./8.*W12_L0
+                +4.*W12xxxy*k2xh**3*k2yh +4.*W12xxxz*k2xh**3*k2zh +4.*W12xyyy*k2yh**3*k2xh \
+                +4.*W12yyyz*k2yh**3*k2zh +4.*W12xzzz*k2zh**3*k2xh +4.*W12yzzz*k2zh**3*k2yh \
+                +6.*W12xxyy*k2xh**2*k2yh**2+6.*W12xxzz*k2xh**2*k2zh**2+6.*W12yyzz*k2yh**2*k2zh**2 \
+                +12.*W12xxyz*k2xh**2*k2yh*k2zh+12.*W12xyyz*k2yh**2*k2xh*k2zh +12.*W12xyzz*k2zh**2*k2xh*k2yh) \
+                -5./2.*W12_k2L2 -7./8.*W12_L0
             
             W12_k1L2_k2L2= 9./4.*k1k2W12 -3./4.*xxW12 -1./2.*W12_k2L2
             
@@ -552,13 +535,13 @@ class Gaussian_Window_Kernels():
             C22exp += [W_k1L2*W12_k2L2 + W_k2L2*W12_k1L2\
                     +W_k1L2_k2L2*W12_L0+W_L0*W12_k1L2_k2L2,\
                     0.5*((1/5.*W_L0+2/7.*W_k1L2+18/35.*W_k1L4)*W12_k2L2 + W_k1L2_k2L2*W12_k1L2\
-    +(1/5.*W_k2L2+2/7.*W_k1L2_k2L2+18/35.*W_k1L4_k2L2)*W12_L0 + W_k1L2*W12_k1L2_k2L2),\
-        0.5*((2/7.*W_k1L2+20/77.*W_k1L4)*W12_k2L2 + W_k1L4_k2L2*W12_k1L2\
-    +(2/7.*W_k1L2_k2L2+20/77.*W_k1L4_k2L2)*W12_L0 + W_k1L4*W12_k1L2_k2L2),\
-    0.5*(W_k1L2_k2L2*W12_k2L2+(1/5.*W_L0+2/7.*W_k2L2+18/35.*W_k2L4)*W12_k1L2\
-    +(1/5.*W_k1L2+2/7.*W_k1L2_k2L2+18/35.*W_k1L2_k2L4)*W12_L0 + W_k2L2*W12_k1L2_k2L2),\
-    0.5*(W_k1L2_k2L4*W12_k2L2+(2/7.*W_k2L2+20/77.*W_k2L4)*W12_k1L2\
-    +(2/7.*W_k1L2_k2L2+20/77.*W_k1L2_k2L4)*W12_L0 + W_k2L4*W12_k1L2_k2L2),\
+                    +(1/5.*W_k2L2+2/7.*W_k1L2_k2L2+18/35.*W_k1L4_k2L2)*W12_L0 + W_k1L2*W12_k1L2_k2L2),\
+                        0.5*((2/7.*W_k1L2+20/77.*W_k1L4)*W12_k2L2 + W_k1L4_k2L2*W12_k1L2\
+                    +(2/7.*W_k1L2_k2L2+20/77.*W_k1L4_k2L2)*W12_L0 + W_k1L4*W12_k1L2_k2L2),\
+                    0.5*(W_k1L2_k2L2*W12_k2L2+(1/5.*W_L0+2/7.*W_k2L2+18/35.*W_k2L4)*W12_k1L2\
+                    +(1/5.*W_k1L2+2/7.*W_k1L2_k2L2+18/35.*W_k1L2_k2L4)*W12_L0 + W_k2L2*W12_k1L2_k2L2),\
+                    0.5*(W_k1L2_k2L4*W12_k2L2+(2/7.*W_k2L2+20/77.*W_k2L4)*W12_k1L2\
+                    +(2/7.*W_k1L2_k2L2+20/77.*W_k1L2_k2L4)*W12_L0 + W_k2L4*W12_k1L2_k2L2),\
                     conj(W12_k1L2_k2L2)*W12_L0+conj(W12_k1L2)*W12_k2L2]
             
             C44exp = [Wc_k2L4*W_k1L4 + Wc_L0*W_k1L4_k2L4,\
@@ -574,13 +557,13 @@ class Gaussian_Window_Kernels():
             C44exp += [W_k1L4*W12_k2L4 + W_k2L4*W12_k1L4\
                     +W_k1L4_k2L4*W12_L0+W_L0*W12_k1L4_k2L4,\
                     0.5*((2/7.*W_k1L2+20/77.*W_k1L4)*W12_k2L4 + W_k1L2_k2L4*W12_k1L4\
-    +(2/7.*W_k1L2_k2L4+20/77.*W_k1L4_k2L4)*W12_L0 + W_k1L2*W12_k1L4_k2L4),\
-    0.5*((1/9.*W_L0+100/693.*W_k1L2+162/1001.*W_k1L4)*W12_k2L4 + W_k1L4_k2L4*W12_k1L4\
-    +(1/9.*W_k2L4+100/693.*W_k1L2_k2L4+162/1001.*W_k1L4_k2L4)*W12_L0 + W_k1L4*W12_k1L4_k2L4),\
-    0.5*(W_k1L4_k2L2*W12_k2L4+(2/7.*W_k2L2+20/77.*W_k2L4)*W12_k1L4\
-    +(2/7.*W_k1L4_k2L2+20/77.*W_k1L4_k2L4)*W12_L0 + W_k2L2*W12_k1L4_k2L4),\
-    0.5*(W_k1L4_k2L4*W12_k2L4+(1/9.*W_L0+100/693.*W_k2L2+162/1001.*W_k2L4)*W12_k1L4\
-    +(1/9.*W_k1L4+100/693.*W_k1L4_k2L2+162/1001.*W_k1L4_k2L4)*W12_L0 + W_k2L4*W12_k1L4_k2L4),\
+                    +(2/7.*W_k1L2_k2L4+20/77.*W_k1L4_k2L4)*W12_L0 + W_k1L2*W12_k1L4_k2L4),\
+                    0.5*((1/9.*W_L0+100/693.*W_k1L2+162/1001.*W_k1L4)*W12_k2L4 + W_k1L4_k2L4*W12_k1L4\
+                    +(1/9.*W_k2L4+100/693.*W_k1L2_k2L4+162/1001.*W_k1L4_k2L4)*W12_L0 + W_k1L4*W12_k1L4_k2L4),\
+                    0.5*(W_k1L4_k2L2*W12_k2L4+(2/7.*W_k2L2+20/77.*W_k2L4)*W12_k1L4\
+                    +(2/7.*W_k1L4_k2L2+20/77.*W_k1L4_k2L4)*W12_L0 + W_k2L2*W12_k1L4_k2L4),\
+                    0.5*(W_k1L4_k2L4*W12_k2L4+(1/9.*W_L0+100/693.*W_k2L2+162/1001.*W_k2L4)*W12_k1L4\
+                    +(1/9.*W_k1L4+100/693.*W_k1L4_k2L2+162/1001.*W_k1L4_k2L4)*W12_L0 + W_k2L4*W12_k1L4_k2L4),\
                     conj(W12_k1L4_k2L4)*W12_L0+conj(W12_k1L4)*W12_k2L4] #1/(nbar)^2
             
             C20exp = [Wc_L0*W_k1L2,Wc_L0*W_k1L2_k2L2,Wc_L0*W_k1L2_k2L4,\
@@ -618,38 +601,39 @@ class Gaussian_Window_Kernels():
             C42exp += [W_k1L4*W12_k2L2 + W_k2L2*W12_k1L4+\
                     W_k1L4_k2L2*W12_L0+W*W12_k1L4_k2L2,\
                     0.5*((2/7.*W_k1L2+20/77.*W_k1L4)*W12_k2L2 + W_k1L2_k2L2*W12_k1L4\
-        +(2/7.*W_k1L2_k2L2+20/77.*W_k1L4_k2L2)*W12_L0 + W_k1L2*W12_k1L4_k2L2),\
-        0.5*((1/9.*W+100/693.*W_k1L2+162/1001.*W_k1L4)*W12_k2L2 + W_k1L4_k2L2*W12_k1L4\
-    +(1/9.*W_k2L2+100/693.*W_k1L2_k2L2+162/1001.*W_k1L4_k2L2)*W12_L0 + W_k1L4*W12_k1L4_k2L2),\
-    0.5*(W_k1L4_k2L2*W12_k2L2+(1/5.*W+2/7.*W_k2L2+18/35.*W_k2L4)*W12_k1L4\
-    +(1/5.*W_k1L4+2/7.*W_k1L4_k2L2+18/35.*W_k1L4_k2L4)*W12_L0 + W_k2L2*W12_k1L4_k2L2),\
-    0.5*(W_k1L4_k2L4*W12_k2L2+(2/7.*W_k2L2+20/77.*W_k2L4)*W12_k1L4\
-    +(2/7.*W_k1L4_k2L2+20/77.*W_k1L4_k2L4)*W12_L0 + W_k2L4*W12_k1L4_k2L2),\
+                    +(2/7.*W_k1L2_k2L2+20/77.*W_k1L4_k2L2)*W12_L0 + W_k1L2*W12_k1L4_k2L2),\
+                    0.5*((1/9.*W+100/693.*W_k1L2+162/1001.*W_k1L4)*W12_k2L2 + W_k1L4_k2L2*W12_k1L4\
+                    +(1/9.*W_k2L2+100/693.*W_k1L2_k2L2+162/1001.*W_k1L4_k2L2)*W12_L0 + W_k1L4*W12_k1L4_k2L2),\
+                    0.5*(W_k1L4_k2L2*W12_k2L2+(1/5.*W+2/7.*W_k2L2+18/35.*W_k2L4)*W12_k1L4\
+                    +(1/5.*W_k1L4+2/7.*W_k1L4_k2L2+18/35.*W_k1L4_k2L4)*W12_L0 + W_k2L2*W12_k1L4_k2L2),\
+                    0.5*(W_k1L4_k2L4*W12_k2L2+(2/7.*W_k2L2+20/77.*W_k2L4)*W12_k1L4\
+                    +(2/7.*W_k1L4_k2L2+20/77.*W_k1L4_k2L4)*W12_L0 + W_k2L4*W12_k1L4_k2L2),\
                     conj(W12_k1L4_k2L2)*W12_L0+conj(W12_k1L4)*W12_k2L2] #1/(nbar)^2
             
-            for i in range(-3,4):
-                ind=(sort==i)
-                for j in range(15):
-                    avgW00[i+3,j]+=np.sum(C00exp[j][ind])
-                    avgW22[i+3,j]+=np.sum(C22exp[j][ind])
-                    avgW44[i+3,j]+=np.sum(C44exp[j][ind])
-                    avgW20[i+3,j]+=np.sum(C20exp[j][ind])
-                    avgW40[i+3,j]+=np.sum(C40exp[j][ind])
-                    avgW42[i+3,j]+=np.sum(C42exp[j][ind])
-                
-        for i in range(0,2*3+1):
-            if(i+kbin_idx-3>=self.nBins or i+kbin_idx-3<0): 
-                avgW00[i]*=0; avgW22[i]*=0; avgW44[i]*=0
-                avgW20[i]*=0; avgW40[i]*=0; avgW42[i]*=0
-                continue
-            avgW00[i]=avgW00[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
-            avgW22[i]=avgW22[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
-            avgW44[i]=avgW44[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
-            avgW20[i]=avgW20[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
-            avgW40[i]=avgW40[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
-            avgW42[i]=avgW42[i]/(norm*self.Bin_ModeNum[kbin_idx+i-3]*self.I22**2)
+            for delta_k in range(-self.delta_k_max,self.delta_k_max+1):
+                ind=(sort==delta_k)
+                # Iterating over terms (m,m') that will multiply P_m(k1)*P_m'(k2) in the sum
+                for term in range(15):
+                    avgWij[delta_k+self.delta_k_max,term, 0] += np.sum(np.real(C00exp[term][ind]))
+                    avgWij[delta_k+self.delta_k_max,term, 1] += np.sum(np.real(C22exp[term][ind]))
+                    avgWij[delta_k+self.delta_k_max,term, 2] += np.sum(np.real(C44exp[term][ind]))
+                    avgWij[delta_k+self.delta_k_max,term, 3] += np.sum(np.real(C20exp[term][ind]))
+                    avgWij[delta_k+self.delta_k_max,term, 4] += np.sum(np.real(C40exp[term][ind]))
+                    avgWij[delta_k+self.delta_k_max,term, 5] += np.sum(np.real(C42exp[term][ind]))
         
-        avgWij[:,:,0]=2.*np.real(avgW00); avgWij[:,:,1]=25.*np.real(avgW22); avgWij[:,:,2]=81.*np.real(avgW44);
-        avgWij[:,:,3]=5.*2.*np.real(avgW20); avgWij[:,:,4]=9.*2.*np.real(avgW40); avgWij[:,:,5]=45.*np.real(avgW42);
+        # divide by the number of k-modes to get the average
+        for i in range(0,2*self.delta_k_max+1):
+            if(i+kbin_idx-self.delta_k_max>=self.nBins[zbin_idx] or i+kbin_idx-self.delta_k_max<0): 
+                avgWij[i,:,:] *= 0
+            else:
+                avgWij[i,:,:] /= Nmodes[kbin_idx + i - self.delta_k_max]
+                #avgWij[i]/=(norm*self.Bin_ModeNum[kbin_idx+i-self.delta_k_max]*self.I22**2)
+        
+        avgWij[:,:,0]*=self.ell_factor(0, 0)
+        avgWij[:,:,1]*=self.ell_factor(2, 2)
+        avgWij[:,:,2]*=self.ell_factor(4, 4)
+        avgWij[:,:,3]*=self.ell_factor(2, 0)
+        avgWij[:,:,4]*=self.ell_factor(4, 0)
+        avgWij[:,:,5]*=self.ell_factor(4, 2)
         
         return(avgWij)
