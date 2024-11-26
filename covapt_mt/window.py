@@ -19,7 +19,7 @@ class Survey_Geometry_Kernels():
     Class that contains functions needed to calculate the covariance matrix window functions
     given a survey-like geometry 
     """
-    def __init__ (self, h:float, Om0:float, zbins, k_centers:list, box_size,
+    def __init__ (self, h:float, Om0:float, zbins, k_centers:list, box_padding,
                   data_dir="", random_file=""):
         """Constructs Survey_Window_Kernels object
 
@@ -42,28 +42,19 @@ class Survey_Geometry_Kernels():
         # calculate bin edges and width from the k centers
         self.get_k_bin_edges(k_centers)
 
-        # number of k-bins on each side of the diaganal to calculate
-        # Should be kept small, since the Gaussian covariance drops quickly away from the diag
-        self.delta_k_max = 3
-
-        # length of box when computing FFTs
-        self.box_size = box_size
-
-        # fundamental k mode
-        self.kfun=2.*np.pi/self.box_size
-
-        #if self.kfun > self.kbin_edges[1]:
-        #    print("WARNING! fundamental k mode is larger than the smallest k bin! This might cause issues!")
-
         # As the window falls steeply with k, only low-k regions are needed for the calculation.
         # Therefore cutting out the high-k modes in the FFTs using the self.icut parameter
         self.icut=15; # needs to be less than Lm//2 (Lm: size of FFT)
 
-        # Why are there 2 of these? 
-        self.Lm2 = []
-        for z in range(self.num_zbins):
-            self.Lm2.append(int(self.kbin_width[z]*self.nBins[z]/self.kfun)+1)
-            assert self.icut < (self.Lm2[z] / 2)
+        # infer the box size from random catalogs
+        self.calculate_survey_properties(box_padding)
+
+        # number of k-bins on each side of the diaganal to calculate
+        # Should be kept small, since the Gaussian covariance drops quickly away from the diag
+        self.delta_k_max = 3
+
+        #if self.kfun > self.kbin_edges[1]:
+        #    print("WARNING! fundamental k mode is larger than the smallest k bin! This might cause issues!")
 
     def load_survey_randoms(self, zbins, data_dir, random_file_prefix=""):
         """Loads random survey catalog from an hdf5 file
@@ -110,10 +101,11 @@ class Survey_Geometry_Kernels():
         """Returns the number of FFTs to do at a given order n"""
         return int((n+1)*(n+2)/2)
 
-    def shift_positions(self, BoxSize):
+    def shift_positions(self):
         """Shifts positions to be centered on the box"""
         for bin in range(self.num_zbins):
-            self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition'] + da.array(3*[BoxSize/2])
+            self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition']
+            #self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition'] + da.array(3*[self.box_size[bin]/2])
 
     def PowerCalc(self, arr, nBins, sort):
         """Calculates window power spectrum from FFT array"""
@@ -123,14 +115,32 @@ class Survey_Geometry_Kernels():
             window_p[i]=np.average(arr[ind])
         return(np.real(window_p))
 
-    def calc_FFTs(self, Nmesh:int, BoxSize, names):
+    def calculate_survey_properties(self, box_padding):
+        """Infers the box size and fundamental k mode from the input random catalog"""
+        self.box_size = []
+        self.Lm2 = []
+        self.kfun = []
+        for z in range(self.num_zbins):
+            self.box_size.append(max(da.max(self.randoms[z]["OriginalPosition"][0]),
+                                     da.max(self.randoms[z]["OriginalPosition"][1]),
+                                     da.max(self.randoms[z]["OriginalPosition"][2])) \
+                               - min(da.min(self.randoms[z]["OriginalPosition"][0]),
+                                     da.min(self.randoms[z]["OriginalPosition"][1]),
+                                     da.min(self.randoms[z]["OriginalPosition"][2])))
+            self.box_size[z] = self.box_size[z].compute() * box_padding
+            self.kfun.append(2.*np.pi/self.box_size[z])
+            self.Lm2.append(int(self.kbin_width[z]*self.nBins[z]/self.kfun[z])+1)
+            
+            assert self.icut < (self.Lm2[z] / 2)
+            print("using box size of {:0.1f} Mpc/h, fundamental k-mode = {:0.3e} h/Mpc".format(self.box_size[z], self.kfun[z]))
+
+    def calc_FFTs(self, Nmesh:int, names):
         """Calculates and returns Fast Fourier Transforms of the random catalog
 
         NOTE: This function is computationally expensive.
         
         Args:
             Nmesh: The size of the FFT mesh
-            BoxSize: The survey box size in Mpc/h. Should encompass all galaxies in the survey
         """
 
         export=np.zeros((self.num_zbins, 2*(1+self.num_ffts(2)+self.num_ffts(4)),Nmesh,Nmesh,Nmesh),dtype='complex128')
@@ -143,7 +153,7 @@ class Survey_Geometry_Kernels():
                 print(f'Computing FFTs of {w}')
                 
                 print('Computing 0th order FFTs')
-                Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=BoxSize, value=w, resampler='tsc', interlaced=True, compensated=True).paint())
+                Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size, value=w, resampler='tsc', interlaced=True, compensated=True).paint())
                 Wij *= (da.sum(self.randoms[bin][w]).compute())/np.real(Wij[0,0,0]) #Fixing normalization, e.g., zero mode should be I22 for 'W22'
                 export[bin, ind]=Wij; ind+=1
                 
@@ -151,7 +161,7 @@ class Survey_Geometry_Kernels():
                 for (i,i_label),(j,j_label) in itt.combinations_with_replacement(enumerate(['x', 'y', 'z']), r=2):
                     label = w + i_label + j_label
                     self.randoms[bin][label] = self.randoms[bin][w] * r[i]*r[j] /(r[0]**2 + r[1]**2 + r[2]**2)
-                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=BoxSize, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
+                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
                     Wij *= (da.sum(self.randoms[bin][label]).compute())/np.real(Wij[0,0,0])
                     export[bin, ind]=Wij; ind+=1
 
@@ -159,7 +169,7 @@ class Survey_Geometry_Kernels():
                 for (i,i_label),(j,j_label),(k,k_label),(l,l_label) in itt.combinations_with_replacement(enumerate(['x', 'y', 'z']), r=4):
                     label = w + i_label + j_label + k_label + l_label
                     self.randoms[bin][label] = self.randoms[bin][w] * r[i]*r[j]*r[k]*r[l] /(r[0]**2 + r[1]**2 + r[2]**2)**2
-                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=BoxSize, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
+                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
                     Wij *= (da.sum(self.randoms[bin][label]).compute())/np.real(Wij[0,0,0])
                     export[bin, ind]=Wij; ind+=1
 
@@ -184,7 +194,7 @@ class Survey_Geometry_Kernels():
         for i in range(Wij.shape[1]//2,Wij.shape[1]): #W12, I'm taking conjugate as that is used in the 'WinFun' function later
             self.Wij.append(conj(self.fft(Wij[z_idx][i])))
 
-    def calc_gaussian_kernels(self, Nmesh=48, BoxSize=3750):
+    def calc_gaussian_kernels(self, Nmesh=48):
         """Calculates the gaussian kernels required for the Gaussian window function.
         
         This object only needs to be calculated once per data chunk
@@ -193,14 +203,13 @@ class Survey_Geometry_Kernels():
             Nmesh: The size of the FFT mesh
             BoxSize: The survey box size in Mpc/h. Should encompass all galaxies in the survey
         """
-
         # Shifting the points such that the survey center is in the center of the box
-        self.shift_positions(BoxSize)
+        self.shift_positions()
         for bin in range(self.num_zbins):
             self.randoms[bin]['W12'] = self.randoms[bin]['WEIGHT_FKP']**2 
             self.randoms[bin]['W22'] = (self.randoms[bin]['WEIGHT_FKP']**2) * self.randoms[bin]['NZ']
 
-        return self.calc_FFTs(Nmesh, BoxSize, ["W22", "W12"])
+        return self.calc_FFTs(Nmesh, ["W22", "W12"])
     
     def calc_SSC_window_function(self, Nmesh=300, BoxSize=7200):
         """Calculates the SSC window functions
@@ -389,9 +398,9 @@ class Survey_Geometry_Kernels():
             ix[i,:,:]+=i-self.icut; iy[:,i,:]+=i-self.icut; iz[:,:,i]+=i-self.icut
             
         # randomly select kmodes_sampled number of k-modes
-        kmodes = np.array([[sample_from_shell(kmin/self.kfun, kmax/self.kfun) for _ in range(
+        kmodes = np.array([[sample_from_shell(kmin/self.kfun[zbin_idx], kmax/self.kfun[zbin_idx]) for _ in range(
                            kmodes_sampled)] for kmin, kmax in zip(self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])])
-        Nmodes = nmodes(self.box_size**3, self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])
+        Nmodes = nmodes(self.box_size[zbin_idx]**3, self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])
         # if (kmodes_sampled<self.Bin_ModeNum[kbin_idx]):
         #     norm=kmodes_sampled
         #     sampled=(np.random.rand(kmodes_sampled)*self.Bin_ModeNum[kbin_idx]).astype(int)

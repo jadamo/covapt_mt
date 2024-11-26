@@ -21,7 +21,7 @@ class covariance_model():
     
     """
 
-    def __init__(self, num_tracers, num_zbins, n_galaxy, alpha, k_array_file,
+    def __init__(self, num_tracers, num_zbins, k_array_file, n_galaxy=None, alpha=None,
                  window_dir=""):
         """Initializes power spectrum and covariance model
         
@@ -39,8 +39,12 @@ class covariance_model():
         self._load_G_window_functions(window_dir)
         #self._load_NG_window_functions(key, window_dir)
 
-        self.set_survey_pars(alpha) # <- this is for NG covariance only!
+        #self.set_survey_pars(alpha) # <- this is for NG covariance only!
         self.pk_galaxy = None
+
+        # number of k-bins on each side of the diaganal to calculate
+        # Should be kept small, since the Gaussian covariance drops quickly away from the diag
+        self.delta_k_max = 3
 
         # vectorize some of the more expensive functions
         self.vec_Z12Multipoles = np.vectorize(self.Z12Multipoles)
@@ -103,10 +107,10 @@ class covariance_model():
                 if i > j: continue
                 pk_galaxy[i, j, 0, :] = pk_galaxy_raw[z][idx, 0, :]
                 pk_galaxy[j, i, 0, :] = pk_galaxy_raw[z][idx, 0, :]
-                pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z][idx, 2, :]
-                pk_galaxy[j, i, 2, :] = pk_galaxy_raw[z][idx, 2, :]
-                pk_galaxy[i, j, 4, :] = pk_galaxy_raw[z][idx, 4, :]
-                pk_galaxy[j, i, 4, :] = pk_galaxy_raw[z][idx, 4, :]
+                pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z][idx, 1, :]
+                pk_galaxy[j, i, 2, :] = pk_galaxy_raw[z][idx, 1, :]
+                # pk_galaxy[i, j, 4, :] = np.zeros(self.num_kbins)
+                # pk_galaxy[j, i, 4, :] = np.zeros(self.num_kbins)
                 idx +=1
             self.pk_galaxy.append(pk_galaxy)
             
@@ -124,11 +128,12 @@ class covariance_model():
     def get_k_bins(self):
         return self.k
     
-    def set_number_densities(self, alpha, n_galaxy):
-        self.alpha_mt =np.zeros((self.num_tracers,self.num_tracers))
-        np.fill_diagonal(self.alpha_mt, alpha)
-        self.invng_mt =np.zeros((self.num_tracers,self.num_tracers))
-        np.fill_diagonal(self.invng_mt, 1./np.array(n_galaxy))
+    def set_number_densities(self, alpha=None, n_galaxy=None):
+        if alpha == None: self.alpha_mt =np.ones((self.num_tracers,self.num_tracers))
+        else:             self.alpha_mt = alpha
+        
+        if n_galaxy == None: self.invng_mt =np.ones((self.num_tracers,self.num_tracers))
+        else:                self.invng_mt = 1 / np.array(n_galaxy)
         
     def set_survey_pars(self, alpha):
         # The following parameters are calculated from the survey random catalog
@@ -146,51 +151,51 @@ class covariance_model():
     #-------------------------------------------------------------------
     def Cij(self, kt, Wij, Pfit):
         """Generates intermidiate product for the Gaussian covariance matrix"""
-        temp=np.zeros((7,6))
-        for i in range(-3,4):
-            if(kt+i<0 or kt+i>=self.num_kbins):
-                temp[i+3]=0
+        temp=np.zeros((2*self.delta_k_max+1,6))
+        for dk in range(-self.delta_k_max, self.delta_k_max+1):
+            if(kt+dk<0 or kt+dk>=self.num_kbins):
+                temp[dk+3]=0
                 continue
-            temp[i+3]=Wij[i+3,0]*Pfit[0][kt]*Pfit[0][kt+i]+\
-            Wij[i+3,1]*Pfit[0][kt]*Pfit[2][kt+i]+\
-            Wij[i+3,2]*Pfit[0][kt]*Pfit[4][kt+i]+\
-            Wij[i+3,3]*Pfit[2][kt]*Pfit[0][kt+i]+\
-            Wij[i+3,4]*Pfit[2][kt]*Pfit[2][kt+i]+\
-            Wij[i+3,5]*Pfit[2][kt]*Pfit[4][kt+i]+\
-            Wij[i+3,6]*Pfit[4][kt]*Pfit[0][kt+i]+\
-            Wij[i+3,7]*Pfit[4][kt]*Pfit[2][kt+i]+\
-            Wij[i+3,8]*Pfit[4][kt]*Pfit[4][kt+i]+\
-            1.01*(Wij[i+3,9]*(Pfit[0][kt]+Pfit[0][kt+i])/2.+\
-            Wij[i+3,10]*Pfit[2][kt]+Wij[i+3,11]*Pfit[4][kt]+\
-            Wij[i+3,12]*Pfit[2][kt+i]+Wij[i+3,13]*Pfit[4][kt+i])+\
-            1.01**2*Wij[i+3,14]
+            temp[dk+3]=Wij[dk+3,0]*Pfit[0][kt]*Pfit[0][kt+dk]+\
+                       Wij[dk+3,1]*Pfit[0][kt]*Pfit[2][kt+dk]+\
+                       Wij[dk+3,2]*Pfit[0][kt]*Pfit[4][kt+dk]+\
+                       Wij[dk+3,3]*Pfit[2][kt]*Pfit[0][kt+dk]+\
+                       Wij[dk+3,4]*Pfit[2][kt]*Pfit[2][kt+dk]+\
+                       Wij[dk+3,5]*Pfit[2][kt]*Pfit[4][kt+dk]+\
+                       Wij[dk+3,6]*Pfit[4][kt]*Pfit[0][kt+dk]+\
+                       Wij[dk+3,7]*Pfit[4][kt]*Pfit[2][kt+dk]+\
+                       Wij[dk+3,8]*Pfit[4][kt]*Pfit[4][kt+dk]+\
+                       1.01*(Wij[dk+3,9]*(Pfit[0][kt]+Pfit[0][kt+dk])/2.+\
+                       Wij[dk+3,10]*Pfit[2][kt]+Wij[dk+3,11]*Pfit[4][kt]+\
+                       Wij[dk+3,12]*Pfit[2][kt+dk]+Wij[dk+3,13]*Pfit[4][kt+dk])+\
+                       1.01**2*Wij[dk+3,14]
         return(temp)
 
     #-------------------------------------------------------------------
     def Cij_MT(self, kt,Wij, Pfit, A = 0, B= 0, C = 0, D = 0):
-        temp=np.zeros((7,6))
-        for i in range(-3,4):
-            if(kt+i<0 or kt+i>=self.num_kbins):
-                temp[i+3]=0.
+        temp=np.zeros((2*self.delta_k_max+1,6))
+        for dk in range(-self.delta_k_max, self.delta_k_max+1):
+            if(kt+dk<0 or kt+dk>=self.num_kbins):
+                temp[dk+3]=0.
                 continue
-            temp[i+3]=Wij[i+3,0]*(Pfit[A,C,0][kt]*Pfit[B,D,0][kt+i]+Pfit[A,D,0][kt]*Pfit[B,C,0][kt+i])/2.+\
-            Wij[i+3,1]*(Pfit[A,C,0][kt]*Pfit[B,D,2][kt+i]+Pfit[A,D,0][kt]*Pfit[B,C,2][kt+i])/2.+\
-            Wij[i+3,2]*(Pfit[A,C,0][kt]*Pfit[B,D,4][kt+i]+Pfit[A,D,0][kt]*Pfit[B,C,4][kt+i])/2.+\
-            Wij[i+3,3]*(Pfit[A,C,2][kt]*Pfit[B,D,0][kt+i]+Pfit[A,D,2][kt]*Pfit[B,C,0][kt+i])/2.+\
-            Wij[i+3,4]*(Pfit[A,C,2][kt]*Pfit[B,D,2][kt+i]+Pfit[A,D,2][kt]*Pfit[B,C,2][kt+i])/2.+\
-            Wij[i+3,5]*(Pfit[A,C,2][kt]*Pfit[B,D,4][kt+i]+Pfit[A,D,2][kt]*Pfit[B,C,4][kt+i])/2.+\
-            Wij[i+3,6]*(Pfit[A,C,4][kt]*Pfit[B,D,0][kt+i]+Pfit[A,D,4][kt]*Pfit[B,C,0][kt+i])/2.+\
-            Wij[i+3,7]*(Pfit[A,C,4][kt]*Pfit[B,D,2][kt+i]+Pfit[A,D,4][kt]*Pfit[B,C,2][kt+i])/2.+\
-            Wij[i+3,8]*(Pfit[A,C,4][kt]*Pfit[B,D,4][kt+i]+Pfit[A,D,4][kt]*Pfit[B,C,4][kt+i])/2.#+\
-            #0.5*(1+alpha_mt[A,C])*(Wij[i+3,9]*(Pfit[B,D,0][kt]+Pfit[B,D,0][kt+i])/2.+\
-            #Wij[i+3,10]*Pfit[B,D,2][kt]+Wij[i+3,11]*Pfit[B,D,4][kt]+\
-            #Wij[i+3,12]*Pfit[B,D,2][kt+i]+Wij[i+3,13]*Pfit[B,D,4][kt+i])+\
-            #0.5*(1+alpha_mt[A,D])*(Wij[i+3,9]*(Pfit[B,C,0][kt]+Pfit[B,C,0][kt+i])/2.+\
-            #Wij[i+3,10]*Pfit[B,C,2][kt]+Wij[i+3,11]*Pfit[B,C,4][kt]+\
-            #Wij[i+3,12]*Pfit[B,C,2][kt+i]+Wij[i+3,13]*Pfit[B,C,4][kt+i])+\
-            #((1+alpha_mt[A,C])*(1+alpha_mt[B,D])+(1+alpha_mt[A,D])*(1+alpha_mt[B,C]))/2.*Wij[i+3,14] 
-            # Terms with (1+alpha) are 1/nbar like term corresponding to shot noise
-            # Term with (1+alpha)**2 is 1/nbar**2 like term
+            temp[dk+3]=Wij[dk+3,0]*(Pfit[A,C,0][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,0][kt+dk])/2.+\
+                       Wij[dk+3,1]*(Pfit[A,C,0][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,2][kt+dk])/2.+\
+                       Wij[dk+3,2]*(Pfit[A,C,0][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,4][kt+dk])/2.+\
+                       Wij[dk+3,3]*(Pfit[A,C,2][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,0][kt+dk])/2.+\
+                       Wij[dk+3,4]*(Pfit[A,C,2][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,2][kt+dk])/2.+\
+                       Wij[dk+3,5]*(Pfit[A,C,2][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,4][kt+dk])/2.+\
+                       Wij[dk+3,6]*(Pfit[A,C,4][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,0][kt+dk])/2.+\
+                       Wij[dk+3,7]*(Pfit[A,C,4][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,2][kt+dk])/2.+\
+                       Wij[dk+3,8]*(Pfit[A,C,4][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,4][kt+dk])/2.+\
+                       0.5*(1+self.alpha_mt[A,C])*(Wij[dk+3,9]*(Pfit[B,D,0][kt]+Pfit[B,D,0][kt+dk])/2.+\
+                       Wij[dk+3,10]*Pfit[B,D,2][kt]+Wij[dk+3,11]*Pfit[B,D,4][kt]+\
+                       Wij[dk+3,12]*Pfit[B,D,2][kt+dk]+Wij[dk+3,13]*Pfit[B,D,4][kt+dk])+\
+                       0.5*(1+self.alpha_mt[A,D])*(Wij[dk+3,9]*(Pfit[B,C,0][kt]+Pfit[B,C,0][kt+dk])/2.+\
+                       Wij[dk+3,10]*Pfit[B,C,2][kt]+Wij[dk+3,11]*Pfit[B,C,4][kt]+\
+                       Wij[dk+3,12]*Pfit[B,C,2][kt+dk]+Wij[dk+3,13]*Pfit[B,C,4][kt+dk])+\
+                       ((1+self.alpha_mt[A,C])*(1+self.alpha_mt[B,D])+(1+self.alpha_mt[A,D])*(1+self.alpha_mt[B,C]))/2.*Wij[dk+3,14] 
+                       # Terms with (1+alpha) are 1/nbar like term corresponding to shot noise
+                       # Term with (1+alpha)**2 is 1/nbar**2 like term
         return(temp)
 
     #-------------------------------------------------------------------
@@ -376,7 +381,6 @@ class covariance_model():
             pk_galaxy = self.pk_galaxy
 
         n_multi = int(self.num_tracers*(self.num_tracers+1)/2) # <- total # of auto + cross spectra
-        print(self.num_tracers, n_multi)
         covMat_all = []
         for z in range(self.num_zbins):
             covMat=np.zeros((2*self.num_kbins[z]*n_multi,2*self.num_kbins[z]*n_multi))
@@ -390,7 +394,9 @@ class covariance_model():
                     n_CD += 1
                     for i in range(self.num_kbins[z]):
                         temp=self.Cij_MT(i,self.WijFile[z][i], pk_galaxy[z], A=A,B=B,C=C,D=D)
-                        C00=temp[:,0]; C22=temp[:,1]; C20=temp[:,3]
+                        C00=temp[:,0]
+                        C22=temp[:,1]
+                        C20=temp[:,3]
                         for j in range(-3,4):
                             if(i+j>=0 and i+j<self.num_kbins[z]):
                                 covMat[n_AB*2*self.num_kbins[z]+i,n_CD*2*self.num_kbins[z]+i+j]=C00[j+3]

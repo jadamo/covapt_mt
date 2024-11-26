@@ -35,14 +35,14 @@ def main():
                                                     config_dict["Om0"],
                                                     config_dict["zbins"],
                                                     k_centers,
-                                                    config_dict["box_size"],
+                                                    config_dict["box_padding"],
                                                     config_dict["input_dir"],
                                                     config_dict["random_file_prefix"])
 
     if not os.path.exists(config_dict["output_dir"]+'FFTWinFun.npy'):
         print("\nStarting FFT calculations...")
         t1 = time.time()
-        export = survey_kernels.calc_gaussian_kernels(config_dict["fft_mesh_size"], config_dict["box_size"])
+        export = survey_kernels.calc_gaussian_kernels(config_dict["fft_mesh_size"])
         t2 = time.time()
         print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
 
