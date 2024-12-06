@@ -105,6 +105,7 @@ class covariance_model():
             pk_galaxy = np.zeros((self.num_tracers, self.num_tracers, 5, self.num_kbins[z]))
             for i, j in itertools.product(range(self.num_tracers), repeat=2):
                 if i > j: continue
+                print(i, j, idx)
                 pk_galaxy[i, j, 0, :] = pk_galaxy_raw[z][idx, 0, :]
                 pk_galaxy[j, i, 0, :] = pk_galaxy_raw[z][idx, 0, :]
                 pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z][idx, 1, :]

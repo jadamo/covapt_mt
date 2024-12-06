@@ -71,10 +71,10 @@ class Survey_Geometry_Kernels():
 
         for bin in range(self.num_zbins):
             
-            random_file = random_file_prefix#+"bin"+str(bin)
+            random_file = random_file_prefix+"bin"+str(bin)
             # TODO: Update to match Henry's file format when he gives you it
-            if not os.path.exists(data_dir+random_file+".fits") or\
-                   os.path.exists(data_dir+random_file+".hdf5"):
+            if not os.path.exists(data_dir+random_file+".fits") and \
+               not os.path.exists(data_dir+random_file+".hdf5"):
                 raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
             try:    randoms = HDFCatalog(data_dir+random_file+".hdf5")
             except: randoms = FITSCatalog(data_dir+random_file+".fits")
