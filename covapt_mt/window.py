@@ -4,7 +4,7 @@
 import os
 import numpy as np
 from numpy import conj
-from nbodykit.source.catalog import HDFCatalog
+from nbodykit.source.catalog import HDFCatalog, FITSCatalog
 from nbodykit.lab import cosmology, transform
 import dask.array as da
 import itertools as itt
@@ -70,11 +70,19 @@ class Survey_Geometry_Kernels():
         self.I22 = np.zeros(self.num_zbins)
 
         for bin in range(self.num_zbins):
-            random_file = random_file_prefix+"bin"+str(bin)+".hdf5"
+            
+            random_file = random_file_prefix#+"bin"+str(bin)
             # TODO: Update to match Henry's file format when he gives you it
-            if not os.path.exists(data_dir+random_file):
+            if not os.path.exists(data_dir+random_file+".fits") or\
+                   os.path.exists(data_dir+random_file+".hdf5"):
                 raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
-            self.randoms.append(HDFCatalog(data_dir+random_file))
+            try:    randoms = HDFCatalog(data_dir+random_file+".hdf5")
+            except: randoms = FITSCatalog(data_dir+random_file+".fits")
+            
+            bin_name = "bin"+str(bin+1)
+            subset_idx = (randoms["Z"] < zbins[bin_name+"_hi"]) & (randoms["Z"] > zbins[bin_name+"_lo"])
+            self.randoms.append(randoms[subset_idx])
+
             self.I22[bin] = np.sum(self.randoms[bin]['NZ']**1 * self.randoms[bin]['WEIGHT_FKP']**2)
 
     def convert_to_distances(self, h:float, Om0:float):
@@ -104,8 +112,8 @@ class Survey_Geometry_Kernels():
     def shift_positions(self):
         """Shifts positions to be centered on the box"""
         for bin in range(self.num_zbins):
-            self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition']
-            #self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition'] + da.array(3*[self.box_size[bin]/2])
+            #self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition']
+            self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition'] + da.array(3*[self.box_size[bin]/2])
 
     def PowerCalc(self, arr, nBins, sort):
         """Calculates window power spectrum from FFT array"""
@@ -132,9 +140,11 @@ class Survey_Geometry_Kernels():
             self.Lm2.append(int(self.kbin_width[z]*self.nBins[z]/self.kfun[z])+1)
             
             assert self.icut < (self.Lm2[z] / 2)
+            print("min / max redshift: [{:0.2f}, {:0.2f}]".format(da.min(self.randoms[z]["Z"]).compute(),
+                                                                  da.max(self.randoms[z]["Z"]).compute()))
             print("using box size of {:0.1f} Mpc/h, fundamental k-mode = {:0.3e} h/Mpc".format(self.box_size[z], self.kfun[z]))
 
-    def calc_FFTs(self, Nmesh:int, names):
+    def calc_FFTs(self, Nmesh, names):
         """Calculates and returns Fast Fourier Transforms of the random catalog
 
         NOTE: This function is computationally expensive.
@@ -151,9 +161,8 @@ class Survey_Geometry_Kernels():
             ind=0
             for w in names:
                 print(f'Computing FFTs of {w}')
-                
                 print('Computing 0th order FFTs')
-                Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size, value=w, resampler='tsc', interlaced=True, compensated=True).paint())
+                Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size[bin], value=w, resampler='tsc', interlaced=True, compensated=True).paint())
                 Wij *= (da.sum(self.randoms[bin][w]).compute())/np.real(Wij[0,0,0]) #Fixing normalization, e.g., zero mode should be I22 for 'W22'
                 export[bin, ind]=Wij; ind+=1
                 
@@ -161,7 +170,7 @@ class Survey_Geometry_Kernels():
                 for (i,i_label),(j,j_label) in itt.combinations_with_replacement(enumerate(['x', 'y', 'z']), r=2):
                     label = w + i_label + j_label
                     self.randoms[bin][label] = self.randoms[bin][w] * r[i]*r[j] /(r[0]**2 + r[1]**2 + r[2]**2)
-                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
+                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size[bin], value=label, resampler='tsc', interlaced=True, compensated=True).paint())
                     Wij *= (da.sum(self.randoms[bin][label]).compute())/np.real(Wij[0,0,0])
                     export[bin, ind]=Wij; ind+=1
 
@@ -169,7 +178,7 @@ class Survey_Geometry_Kernels():
                 for (i,i_label),(j,j_label),(k,k_label),(l,l_label) in itt.combinations_with_replacement(enumerate(['x', 'y', 'z']), r=4):
                     label = w + i_label + j_label + k_label + l_label
                     self.randoms[bin][label] = self.randoms[bin][w] * r[i]*r[j]*r[k]*r[l] /(r[0]**2 + r[1]**2 + r[2]**2)**2
-                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size, value=label, resampler='tsc', interlaced=True, compensated=True).paint())
+                    Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size[bin], value=label, resampler='tsc', interlaced=True, compensated=True).paint())
                     Wij *= (da.sum(self.randoms[bin][label]).compute())/np.real(Wij[0,0,0])
                     export[bin, ind]=Wij; ind+=1
 
