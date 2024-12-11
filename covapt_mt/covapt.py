@@ -28,7 +28,7 @@ class covariance_model():
         Args:
             z: effective / mean redshift of the sample
             k: np array of k bin centers
-            alpha: ratio of number of objects in the galaxy vs random catalogs
+            alpha: ratio of number of objects in the galaxy vs random catalogs. Should be less than 1
             window_dir: location of precomputed window functions. Detault directory provided by the repo
             key: specific data sample to model. Must be one of ["HighZ_NGC", "HighZ_SGC", "LowZ_NGZ", "LowZ_SGC"]
         """
@@ -79,6 +79,7 @@ class covariance_model():
         for zbin in range(self.num_zbins):
 
             window_file = window_dir + str(zbin)+".npy"
+            print("Loading window file from:", window_file)
             if not os.path.exists(window_file):
                 raise IOError("ERROR! Could not find", window_file)
         
@@ -86,6 +87,7 @@ class covariance_model():
 
     #-------------------------------------------------------------------
     def load_power_spectrum(self, pk_file):
+        print("Loading power spectrum from:", pk_file)
         pk_data = np.load(pk_file)
         if pk_file[-4:] == ".npz":
             pk_galaxy_raw = []
@@ -105,7 +107,7 @@ class covariance_model():
             pk_galaxy = np.zeros((self.num_tracers, self.num_tracers, 5, self.num_kbins[z]))
             for i, j in itertools.product(range(self.num_tracers), repeat=2):
                 if i > j: continue
-                print(i, j, idx)
+                print(i, j)
                 pk_galaxy[i, j, 0, :] = pk_galaxy_raw[z][idx, 0, :]
                 pk_galaxy[j, i, 0, :] = pk_galaxy_raw[z][idx, 0, :]
                 pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z][idx, 1, :]
@@ -130,20 +132,27 @@ class covariance_model():
         return self.k
     
     def set_number_densities(self, alpha=None, n_galaxy=None):
-        if alpha == None: self.alpha_mt =np.ones((self.num_tracers,self.num_tracers))
-        else:             self.alpha_mt = alpha
+        self.alpha_mt = np.zeros((self.num_tracers,self.num_tracers))
+        if alpha != None:
+            # This code is a work in progress!
+            for i, j in itertools.product(range(self.num_tracers), repeat=2):
+                self.alpha_mt[i,j] = (alpha[i] + alpha[j]) / 2.
+            #self.alpha_mt = np.diag(alpha)
+            print(self.alpha_mt)
         
         if n_galaxy == None: self.invng_mt =np.ones((self.num_tracers,self.num_tracers))
         else:                self.invng_mt = 1 / np.array(n_galaxy)
         
     def set_survey_pars(self, alpha):
+        # WARNING: This function should not be used as is!
+        raise NotImplementedError
         # The following parameters are calculated from the survey random catalog
         # Using Iij convention in Eq.(3)
-        self.i22 = 454.2155*alpha; self.i11 = 7367534.87288*alpha; self.i12 = 2825379.84558*alpha;
-        self.i10 = 23612072*alpha; self.i24 = 58.49444652*alpha; 
-        self.i14 = 756107.6916375*alpha; self.i34 = 8.993832235e-3*alpha;
-        self.i44 = 2.158444115e-6*alpha; self.i32 = 0.11702382*alpha;
-        self.i12oi22 = 2825379.84558/454.2155; #Effective shot noise
+        # self.i22 = 454.2155*alpha; self.i11 = 7367534.87288*alpha; self.i12 = 2825379.84558*alpha;
+        # self.i10 = 23612072*alpha; self.i24 = 58.49444652*alpha; 
+        # self.i14 = 756107.6916375*alpha; self.i34 = 8.993832235e-3*alpha;
+        # self.i44 = 2.158444115e-6*alpha; self.i32 = 0.11702382*alpha;
+        # self.i12oi22 = 2825379.84558/454.2155; #Effective shot noise
 
     #-------------------------------------------------------------------
     # Covariance Helper functions

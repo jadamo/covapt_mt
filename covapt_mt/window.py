@@ -341,6 +341,8 @@ class Survey_Geometry_Kernels():
             for i in range(1, len(self.kbin_edges[z])):
                 self.kbin_edges[z][i] = k_centers[z][i-1] + kbin_half_width
 
+        print("k bin edges:", self.kbin_edges)
+
     def fft(self, temp):
         """Does some shifting of the fft arrays"""
 
@@ -402,7 +404,7 @@ class Survey_Geometry_Kernels():
 
         avgWij=np.zeros((2*self.delta_k_max+1,15,6))
         [ix,iy,iz,k2xh,k2yh,k2zh]=np.zeros((6,2*self.icut+1,2*self.icut+1,2*self.icut+1))
-        
+
         for i in range(2*self.icut+1): 
             ix[i,:,:]+=i-self.icut; iy[:,i,:]+=i-self.icut; iz[:,:,i]+=i-self.icut
             

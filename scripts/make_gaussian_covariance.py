@@ -19,7 +19,7 @@ def main():
                              num_zbins, 
                              config_dict["input_dir"] + config_dict["k_array_file"],
                              config_dict["n_galaxy"], 
-                             #config_dict["alpha"],  
+                             config_dict["alpha"],  
                              window_dir=config_dict["output_dir"] + config_dict["window_file_prefix"])
     model.load_power_spectrum(config_dict["input_dir"] + config_dict["pk_galaxy_file"])
     C_G = model.get_mt_gaussian_covariance()

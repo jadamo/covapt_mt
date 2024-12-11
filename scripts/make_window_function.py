@@ -39,7 +39,9 @@ def main():
                                                     config_dict["input_dir"],
                                                     config_dict["random_file_prefix"])
 
-    if not os.path.exists(config_dict["output_dir"]+'FFTWinFun.npy'):
+    if not os.path.exists(config_dict["output_dir"]+'FFTWinFun.npy') or\
+       config_dict["make_random_ffts"] == True:
+        
         print("\nStarting FFT calculations...")
         t1 = time.time()
         export = survey_kernels.calc_gaussian_kernels(config_dict["fft_mesh_size"])
