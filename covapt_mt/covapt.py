@@ -182,31 +182,35 @@ class covariance_model():
         return(temp)
 
     #-------------------------------------------------------------------
-    def Cij_MT(self, kt,Wij, Pfit, A = 0, B= 0, C = 0, D = 0):
-        temp=np.zeros((2*self.delta_k_max+1,6))
-        for dk in range(-self.delta_k_max, self.delta_k_max+1):
-            if(kt+dk<0 or kt+dk>=self.num_kbins):
-                temp[dk+3]=0.
-                continue
-            temp[dk+3]=Wij[dk+3,0]*(Pfit[A,C,0][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,0][kt+dk])/2.+\
-                       Wij[dk+3,1]*(Pfit[A,C,0][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,2][kt+dk])/2.+\
-                       Wij[dk+3,2]*(Pfit[A,C,0][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,4][kt+dk])/2.+\
-                       Wij[dk+3,3]*(Pfit[A,C,2][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,0][kt+dk])/2.+\
-                       Wij[dk+3,4]*(Pfit[A,C,2][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,2][kt+dk])/2.+\
-                       Wij[dk+3,5]*(Pfit[A,C,2][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,4][kt+dk])/2.+\
-                       Wij[dk+3,6]*(Pfit[A,C,4][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,0][kt+dk])/2.+\
-                       Wij[dk+3,7]*(Pfit[A,C,4][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,2][kt+dk])/2.+\
-                       Wij[dk+3,8]*(Pfit[A,C,4][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,4][kt+dk])/2.+\
-                       0.5*(1+self.alpha_mt[A,C])*(Wij[dk+3,9]*(Pfit[B,D,0][kt]+Pfit[B,D,0][kt+dk])/2.+\
-                       Wij[dk+3,10]*Pfit[B,D,2][kt]+Wij[dk+3,11]*Pfit[B,D,4][kt]+\
-                       Wij[dk+3,12]*Pfit[B,D,2][kt+dk]+Wij[dk+3,13]*Pfit[B,D,4][kt+dk])+\
-                       0.5*(1+self.alpha_mt[A,D])*(Wij[dk+3,9]*(Pfit[B,C,0][kt]+Pfit[B,C,0][kt+dk])/2.+\
-                       Wij[dk+3,10]*Pfit[B,C,2][kt]+Wij[dk+3,11]*Pfit[B,C,4][kt]+\
-                       Wij[dk+3,12]*Pfit[B,C,2][kt+dk]+Wij[dk+3,13]*Pfit[B,C,4][kt+dk])+\
-                       ((1+self.alpha_mt[A,C])*(1+self.alpha_mt[B,D])+(1+self.alpha_mt[A,D])*(1+self.alpha_mt[B,C]))/2.*Wij[dk+3,14] 
-                       # Terms with (1+alpha) are 1/nbar like term corresponding to shot noise
-                       # Term with (1+alpha)**2 is 1/nbar**2 like term
-        return(temp)
+    def Cij_MT(self, kt, dk, Wij, Pfit, A = 0, B= 0, C = 0, D = 0):
+        """Generates specific elements of the Gaussian covariance matrix
+
+        Returns:
+            cov_sub {np array} array of size 6 containing covariance elements corresponding to k + dk. 
+            The indices correspond to the following combination of l's:
+            0: (0,0), 1: (2,2), 2: (4,4), 3: (0,2), 4: (0,4), 5: (2,4)
+        """
+        cosmic_variance_term = Wij[dk+self.delta_k_max,0]*(Pfit[A,C,0][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,0][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,1]*(Pfit[A,C,0][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,2][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,2]*(Pfit[A,C,0][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,4][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,3]*(Pfit[A,C,2][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,0][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,4]*(Pfit[A,C,2][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,2][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,5]*(Pfit[A,C,2][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,4][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,6]*(Pfit[A,C,4][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,0][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,7]*(Pfit[A,C,4][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,2][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,8]*(Pfit[A,C,4][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,4][kt+dk])/2.
+        # Terms with (1+alpha) are 1/nbar like term
+        mixed_term = 0.5*(1+self.alpha_mt[A,C])*(Wij[dk+self.delta_k_max,9]*(Pfit[B,D,0][kt]+Pfit[B,D,0][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,10]*Pfit[B,D,2][kt]   +Wij[dk+self.delta_k_max,11]*Pfit[B,D,4][kt]+\
+                        Wij[dk+self.delta_k_max,12]*Pfit[B,D,2][kt+dk]+Wij[dk+self.delta_k_max,13]*Pfit[B,D,4][kt+dk])+\
+                        0.5*(1+self.alpha_mt[A,D])*(Wij[dk+self.delta_k_max,9]*(Pfit[B,C,0][kt]+Pfit[B,C,0][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,10]*Pfit[B,C,2][kt]   +Wij[dk+self.delta_k_max,11]*Pfit[B,C,4][kt]+\
+                        Wij[dk+self.delta_k_max,12]*Pfit[B,C,2][kt+dk]+Wij[dk+self.delta_k_max,13]*Pfit[B,C,4][kt+dk])
+        # Term with (1+alpha)**2 is 1/nbar**2 like term
+        shotnoise_term = ((1+self.alpha_mt[A,C])*(1+self.alpha_mt[B,D])+(1+self.alpha_mt[A,D])*(1+self.alpha_mt[B,C]))/2.*Wij[dk+self.delta_k_max,14] 
+        
+        cov_sub = cosmic_variance_term + mixed_term + shotnoise_term
+        return(cov_sub)
 
     #-------------------------------------------------------------------
     def Dz(self, z,Om0):
@@ -229,29 +233,6 @@ class covariance_model():
         """
         return(1. + 6*(Om0-1)*scipy.special.hyp2f1(4/3., 2, 17/6., (1-1/Om0)/(1+z)**3)
                     /( 11*Om0*(1+z)**3*scipy.special.hyp2f1(1/3., 1, 11/6., (1-1/Om0)/(1+z)**3) ))
-
-    #-------------------------------------------------------------------
-    # def Pk_lin_CLASS(self, H0:float, omch2:float, ombh2:float, As:float, ns:float):
-    #     """Generates a linear initial matter power spectrum with CLASS"""
-    #     cosmo = Class()
-    #     cosmo.set(self.common_settings)
-
-    #     cosmo.set({'A_s':np.exp(As)/1e10,
-    #             'n_s':ns,
-    #             'omega_b':ombh2,
-    #             'omega_cdm':omch2,
-    #             'H0':H0,
-    #             'z_pk':self.z
-    #             })  
-    #     cosmo.compute()
-    #     k = np.linspace(np.amin(self.k), np.amax(self.k), len(self.k)*3)
-    #     khvec = k * cosmo.h()
-    #     #get matter power spectra and sigma8 at the redshift we want
-    #     pk_lin = np.asarray([cosmo.pk_lin(kh,self.z)*cosmo.h()**3. for kh in khvec])
-
-    #     pdata = np.vstack((k, pk_lin)).T
-    #     cosmo.struct_cleanup()
-    #     return pdata
 
     #-------------------------------------------------------------------
     def trispIntegrand(self, u12,k1, k2, l1, l2, Plin):
@@ -402,17 +383,15 @@ class covariance_model():
                 for C, D in itertools.product(range(self.num_tracers), repeat=2):
                     if D < C: continue
                     n_CD += 1
-                    for i in range(self.num_kbins[z]):
-                        temp=self.Cij_MT(i,self.WijFile[z][i], pk_galaxy[z], A=A,B=B,C=C,D=D)
-                        C00=temp[:,0]
-                        C22=temp[:,1]
-                        C20=temp[:,3]
-                        for j in range(-3,4):
-                            if(i+j>=0 and i+j<self.num_kbins[z]):
-                                covMat[n_AB*2*self.num_kbins[z]+i,n_CD*2*self.num_kbins[z]+i+j]=C00[j+3]
-                                covMat[n_AB*2*self.num_kbins[z]+self.num_kbins[z]+i,n_CD*2*self.num_kbins+self.num_kbins[z]+i+j]=C22[j+3]
-                                covMat[n_AB*2*self.num_kbins[z]+self.num_kbins[z]+i,n_CD*2*self.num_kbins[z]+i+j]=C20[j+3]
-                                covMat[n_AB*2*self.num_kbins[z]+i,n_CD*2*self.num_kbins[z]+self.num_kbins[z]+i+j]=C20[j+3]
+                    for k in range(self.num_kbins[z]):
+                        for dk in range(-self.delta_k_max,self.delta_k_max+1):
+                            if(k+dk>=0 and k+dk<self.num_kbins[z]):
+                                # NOTE: This code can be upgraded to give l=4 gaussian covariance by using the other elements of cov_sub
+                                cov_sub = self.Cij_MT(k, dk, self.WijFile[z][k], pk_galaxy[z], A=A,B=B,C=C,D=D)
+                                covMat[n_AB*2*self.num_kbins[z]+k,n_CD*2*self.num_kbins[z]+k+dk]                                  = cov_sub[0]
+                                covMat[n_AB*2*self.num_kbins[z]+self.num_kbins[z]+k,n_CD*2*self.num_kbins+self.num_kbins[z]+k+dk] = cov_sub[1]
+                                covMat[n_AB*2*self.num_kbins[z]+self.num_kbins[z]+k,n_CD*2*self.num_kbins[z]+k+dk]                = cov_sub[3]
+                                covMat[n_AB*2*self.num_kbins[z]+k,n_CD*2*self.num_kbins[z]+self.num_kbins[z]+k+dk]                = cov_sub[3]
                         #covMat[n_AB*2*num_kbins:n_AB*2*num_kbins+num_kbins,n_CD*2*num_kbins+num_kbins:n_CD*2*num_kbins+num_kbins*2]=np.transpose(covMat[num_kbins:num_kbins*2,:num_kbins])
             
             covMat_all.append((covMat+np.transpose(covMat))/2.)
@@ -451,7 +430,7 @@ class covariance_model():
                     covMat[self.num_kbins+i,self.num_kbins+i+j]=C22[j+3]
                     covMat[self.num_kbins+i,i+j]=C20[j+3]
         covMat[:self.num_kbins,self.num_kbins:self.num_kbins*2]=np.transpose(covMat[self.num_kbins:self.num_kbins*2,:self.num_kbins])
-        covMat=(covMat+np.transpose(covMat))/2.
+        #covMat=(covMat+np.transpose(covMat))/2.
 
         if return_Pk == False: return covMat
         else: return covMat, Pk_galaxy
