@@ -1,7 +1,7 @@
 import os, sys
 import numpy as np
 from covapt_mt.covapt import covariance_model
-from covapt_mt.utils import load_config_file
+from covapt_mt.utils import load_config_file, test_matrix
 
 def main():
 
@@ -24,13 +24,8 @@ def main():
     model.load_power_spectrum(config_dict["input_dir"] + config_dict["pk_galaxy_file"])
     C_G = model.get_mt_gaussian_covariance()
 
-    # test if matrix is positive definite
-    for z in range(model.num_zbins):
-        try:
-            L = np.linalg.cholesky(C_G[z])
-            print("Covariance matrix for zbin " + str(z) + " is positive definite! :)")
-        except:
-            print("ERROR! Covariance matrix for zbin " + str(z) + " is not positive definite!")
+    # test if matrix (and all sub-matrices) is positive definite
+    test_matrix(C_G, model.num_zbins, model.num_spectra, int(model.num_kbins))
 
     keys = list(range(model.num_zbins))
     save_file = config_dict["output_dir"] + config_dict["covariance_file"]

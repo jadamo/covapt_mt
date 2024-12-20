@@ -57,7 +57,7 @@ def main():
         # TODO: find a faster way to loop thru redshift bins
         # For now, save the window functions in seperate files
         for z_idx in range(num_zbins):
-            print("Starting Gaussian window function generation for zbin {:0.0f} with {:0.0f} processes...".format(z_idx, config_dict["num_processes"]))
+            print("Sampling {:0.0f} kmodes for zbin {:0.0f} with {:0.0f} processes...".format(config_dict["kmodes_sampled"], z_idx, config_dict["num_processes"]))
             #Wij = np.zeros((len(k_centers[z_idx]), 7, 15, 6))
             k_idx = range(len(k_centers[z_idx]))
 

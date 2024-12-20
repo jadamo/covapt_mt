@@ -107,7 +107,6 @@ class covariance_model():
             pk_galaxy = np.zeros((self.num_tracers, self.num_tracers, 5, self.num_kbins[z]))
             for i, j in itertools.product(range(self.num_tracers), repeat=2):
                 if i > j: continue
-                print(i, j)
                 pk_galaxy[i, j, 0, :] = pk_galaxy_raw[z][idx, 0, :]
                 pk_galaxy[j, i, 0, :] = pk_galaxy_raw[z][idx, 0, :]
                 pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z][idx, 1, :]
@@ -135,8 +134,11 @@ class covariance_model():
         self.alpha_mt = np.zeros((self.num_tracers,self.num_tracers))
         if alpha != None:
             # This code is a work in progress!
-            for i, j in itertools.product(range(self.num_tracers), repeat=2):
-                self.alpha_mt[i,j] = (alpha[i] + alpha[j]) / 2.
+            # Tim's idea, alpha for cross-tracer should be 0
+            for i in range(self.num_tracers):
+                self.alpha_mt[i, i] = alpha[i]
+            # for i, j in itertools.product(range(self.num_tracers), repeat=2):
+            #     self.alpha_mt[i,j] = (alpha[i] + alpha[j]) / 2.
             #self.alpha_mt = np.diag(alpha)
             print(self.alpha_mt)
         

@@ -72,3 +72,33 @@ def nmodes(volume, kmin, kmax):
         Number of modes.
     '''
     return volume / 3. / (2*np.pi**2) * (kmax**3 - kmin**3)
+
+def test_matrix(cov, num_zbins, num_spectra, num_kbins):
+
+    # test if full matrix is positive definite
+    for z in range(num_zbins):
+
+        try:
+            L = np.linalg.cholesky(cov[z])
+            print("Covariance matrix for zbin " + str(z) + " is positive definite! :)")
+        except:
+            print("WARNING! Covariance matrix for zbin " + str(z) + " is not positive definite!")
+            eigvals = np.linalg.eigvals(cov[z])
+            print("There are {:0.0f} negative eigenvalues, smallest value = {:0.3e}".format(len(eigvals[(eigvals < 0)]), np.amin(eigvals)))
+
+        # test if partial matrices are positive-definite
+        sub_test = 0
+        for i in range(int(num_spectra)):
+            for j in range(int(num_spectra)):
+                C_sub = cov[z][i*2*num_kbins: (i+1)*2*num_kbins,j*2*num_kbins: (j+1)*2*num_kbins]
+                try:
+                    L = np.linalg.cholesky(C_sub)
+                    #print("Partial covariance matrix ({:0.0f}, {:0.0f}) is positive-definite :)".format(i, j))
+                except:
+                    print("Partial covariance matrix ({:0.0f}, {:0.0f}, {:0.0f}) is NOT positive-definite".format(z, i, j))
+                    sub_test = 1
+
+        if sub_test == 0: print("All sub-matrices are positive-definite :)")
+
+        cond = np.linalg.cond(cov[z])
+        print("Condition number = {:0.3e}".format(cond))
