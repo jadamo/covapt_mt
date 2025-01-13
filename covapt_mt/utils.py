@@ -6,8 +6,14 @@ import numpy as np
 def load_config_file(config_file:str):
     """loads in the emulator config file as a dictionary object
     
-    Args:
+    Parameters
+    ----------
         config_file: Config file path and name to laod
+
+    Returns
+    ----------
+        config_dict: dictionary
+            
     """
     with open(config_file, "r") as file:
         try:
@@ -19,23 +25,18 @@ def load_config_file(config_file:str):
     return config_dict
 
 # Functions taken from thecov (https://github.com/cosmodesi/thecov)
-def sample_from_shell(rmin, rmax, discrete=True):
+def sample_from_shell(rmin : float, rmax : float, discrete=True):
     """Sample a point uniformly from a spherical shell.
 
-    Parameters
-    ----------
-    rmin : float
-        Minimum radius of the shell.
-    rmax : float
-        Maximum radius of the shell.
-    discrete : bool, optional
-        If True, the sampled point will be rounded to the nearest integer.
-        Default is True.
+    Args:
+        rmin : Minimum radius of the shell.
+        rmax : Maximum radius of the shell.
+        discrete : bool, optional
+            If True, the sampled point will be rounded to the nearest integer.
+            Default is True.
 
-    Returns
-    -------
-    x,y,z,r : float
-        Coordinates of the sampled point.
+    Returns:
+        x,y,z,r : Coordinates of the sampled point.
     """
 
     r = rmin + (rmax - rmin) * np.random.rand()
@@ -54,29 +55,46 @@ def sample_from_shell(rmin, rmax, discrete=True):
 
     return x,y,z,r
 
-def nmodes(volume, kmin, kmax):
+def nmodes(volume : float, kmin : float, kmax : float):
     '''Compute the number of modes in a given shell.
 
-    Parameters
-    ----------
-    volume : float
-        Volume of the survey.
-    kmin : float
-        Minimum k of the shell.
-    kmax : float
-        Maximum k of the shell.
+    Args:
+        volume : Volume of the survey.
+        kmin : Minimum k of the shell in h/Mpc.
+        kmax : Maximum k of the shell in h/Mpc.
 
-    Returns
-    -------
-    float
-        Number of modes.
+    Returns:
+        N: Number of modes.
     '''
     return volume / 3. / (2*np.pi**2) * (kmax**3 - kmin**3)
 
-def test_matrix(cov, num_zbins, num_spectra, num_kbins):
+def flip_axes(cov, nps:int, nk:int, nl:int):
+    """flips k and l dimensions of the given input covariance matrix
+    
+    Args:
+        cov: {np array} block covariance matrix with elements ordered as [nps, nl, nk]
+        nps: number of (auto + cross) power spectra in the covariance matrix
+        nk: number of k bins
+        nl: number of ells
+    
+    Returns:
+        new_cov: {np array} block covariance matrix with elements ordered as [nps, nk, nl]
+    """
+    tmp_cov = cov.reshape(nps, nl, nk, nps, nl, nk)
+    tmp_cov = tmp_cov.transpose(0, 2, 1, 3, 5, 4)
+    new_cov = tmp_cov.reshape(nps*nk*nl, nps*nk*nl)
+    return new_cov
 
-    # test if full matrix is positive definite
-    for z in range(num_zbins):
+def test_matrix(cov: list, num_spectra: int, num_kbins: int):
+    """Tests if the given list of covariacne matrices, and all sub-blocks, are positive-definite
+    
+    Args:
+        cov: list of covariance matrices (each stored as numpy arrays)
+        num_spectra: number of (auto + cross) power spectra that make up the covariance matrix
+        num_kbins: number of k bins
+    """
+    
+    for z in range(len(cov)):
 
         try:
             L = np.linalg.cholesky(cov[z])

@@ -2,7 +2,7 @@ input_dir : "/Users/JoeyA/Research/SPHEREx/covapt_mt/data/input_data/"
 output_dir : "/Users/JoeyA/Research/SPHEREx/covapt_mt/data/output_data/"
 
 # parameters for producing the window function
-make_gaussian_window : True
+make_gaussian_window : False
 make_ssc_window : False # <- currently not configured for multi-tracer!
 make_random_ffts: False
 random_file_prefix : "random_emu_test_"
@@ -15,18 +15,18 @@ box_padding : 1.5
 # The default used by Jay Wadekar was 25000, which was run on a cluster
 kmodes_sampled : 1000
 num_processes : 12
-num_tracers : 3
+num_tracers : 1
 zbins:
-  bin1_lo : 0.4
-  bin1_hi : 0.6
+  bin1_lo : 0.5
+  bin1_hi : 0.75
 
 h : 0.7
 Om0 : 0.31
 
 make_Gaussian_cov : True
 k_array_file : "k_emu_test.npz"
-pk_galaxy_file : "ps_emu_test_3_tracers.npy"
-covariance_file : "cov_emu_test.npz"
+pk_galaxy_file : "ps_emu_test_1_tracer.npy"
+covariance_file : "cov_single_tracer.npz"
 
 alpha : [0.07, 0.07, 0.07]
 #alpha : [0.07, 0.406] #, 0.522] 

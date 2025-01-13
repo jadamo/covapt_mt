@@ -25,7 +25,7 @@ def main():
     C_G = model.get_mt_gaussian_covariance()
 
     # test if matrix (and all sub-matrices) is positive definite
-    test_matrix(C_G, model.num_zbins, model.num_spectra, int(model.num_kbins))
+    test_matrix(C_G, model.num_spectra, int(model.num_kbins))
 
     keys = list(range(model.num_zbins))
     save_file = config_dict["output_dir"] + config_dict["covariance_file"]
