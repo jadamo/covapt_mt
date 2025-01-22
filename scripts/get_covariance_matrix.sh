@@ -1,6 +1,6 @@
 #!/bin/bash
 
-config_file="/Users/JoeyA/Research/SPHEREx/covapt_mt/config/get_covariance.yaml"
+config_file="/home/joeadamo/Research/SPHEREx/covapt_mt/config/get_covariance.yaml"
 
 # calculate the window function
 python make_window_function.py $config_file

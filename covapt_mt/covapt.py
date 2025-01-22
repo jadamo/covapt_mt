@@ -21,7 +21,7 @@ class covariance_model():
     
     """
 
-    def __init__(self, num_tracers, num_zbins, k_array_file, n_galaxy=None, alpha=None,
+    def __init__(self, num_tracers, num_zbins, k_array_file, alpha=None,
                  window_dir=""):
         """Initializes power spectrum and covariance model
         
@@ -35,7 +35,7 @@ class covariance_model():
         self.num_tracers = num_tracers
         self.num_zbins = num_zbins
         self.set_k_bins(k_array_file)
-        self.set_number_densities(alpha, n_galaxy)
+        self.set_number_densities(alpha)
         self._load_G_window_functions(window_dir)
         #self._load_NG_window_functions(key, window_dir)
 
@@ -192,15 +192,15 @@ class covariance_model():
             The indices correspond to the following combination of l's:
             0: (0,0), 1: (2,2), 2: (4,4), 3: (0,2), 4: (0,4), 5: (2,4)
         """
-        cosmic_variance_term = Wij[dk+self.delta_k_max,0]*(Pfit[A,C,0][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,0][kt+dk])/2.+\
-                        Wij[dk+self.delta_k_max,1]*(Pfit[A,C,0][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,2][kt+dk])/2.+\
-                        Wij[dk+self.delta_k_max,2]*(Pfit[A,C,0][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,0][kt]*Pfit[B,C,4][kt+dk])/2.+\
-                        Wij[dk+self.delta_k_max,3]*(Pfit[A,C,2][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,0][kt+dk])/2.+\
-                        Wij[dk+self.delta_k_max,4]*(Pfit[A,C,2][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,2][kt+dk])/2.+\
-                        Wij[dk+self.delta_k_max,5]*(Pfit[A,C,2][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,2][kt]*Pfit[B,C,4][kt+dk])/2.+\
-                        Wij[dk+self.delta_k_max,6]*(Pfit[A,C,4][kt]*Pfit[B,D,0][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,0][kt+dk])/2.+\
-                        Wij[dk+self.delta_k_max,7]*(Pfit[A,C,4][kt]*Pfit[B,D,2][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,2][kt+dk])/2.+\
-                        Wij[dk+self.delta_k_max,8]*(Pfit[A,C,4][kt]*Pfit[B,D,4][kt+dk]+Pfit[A,D,4][kt]*Pfit[B,C,4][kt+dk])/2.
+        cosmic_variance_term = Wij[dk+self.delta_k_max,0]*(Pfit[A,C,0][kt]*Pfit[B,D,0][kt+dk] + Pfit[A,D,0][kt]*Pfit[B,C,0][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,1]*(Pfit[A,C,0][kt]*Pfit[B,D,2][kt+dk] + Pfit[A,D,0][kt]*Pfit[B,C,2][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,2]*(Pfit[A,C,0][kt]*Pfit[B,D,4][kt+dk] + Pfit[A,D,0][kt]*Pfit[B,C,4][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,3]*(Pfit[A,C,2][kt]*Pfit[B,D,0][kt+dk] + Pfit[A,D,2][kt]*Pfit[B,C,0][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,4]*(Pfit[A,C,2][kt]*Pfit[B,D,2][kt+dk] + Pfit[A,D,2][kt]*Pfit[B,C,2][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,5]*(Pfit[A,C,2][kt]*Pfit[B,D,4][kt+dk] + Pfit[A,D,2][kt]*Pfit[B,C,4][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,6]*(Pfit[A,C,4][kt]*Pfit[B,D,0][kt+dk] + Pfit[A,D,4][kt]*Pfit[B,C,0][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,7]*(Pfit[A,C,4][kt]*Pfit[B,D,2][kt+dk] + Pfit[A,D,4][kt]*Pfit[B,C,2][kt+dk])/2.+\
+                        Wij[dk+self.delta_k_max,8]*(Pfit[A,C,4][kt]*Pfit[B,D,4][kt+dk] + Pfit[A,D,4][kt]*Pfit[B,C,4][kt+dk])/2.
         # Terms with (1+alpha) are 1/nbar like term
         mixed_term = 0.5*(1+self.alpha_mt[A,C])*(Wij[dk+self.delta_k_max,9]*(Pfit[B,D,0][kt]+Pfit[B,D,0][kt+dk])/2.+\
                         Wij[dk+self.delta_k_max,10]*Pfit[B,D,2][kt]   +Wij[dk+self.delta_k_max,11]*Pfit[B,D,4][kt]+\

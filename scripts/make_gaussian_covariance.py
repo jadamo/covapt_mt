@@ -18,14 +18,13 @@ def main():
     model = covariance_model(config_dict["num_tracers"],
                              num_zbins, 
                              config_dict["input_dir"] + config_dict["k_array_file"],
-                             config_dict["n_galaxy"], 
                              config_dict["alpha"],  
                              window_dir=config_dict["output_dir"] + config_dict["window_file_prefix"])
     model.load_power_spectrum(config_dict["input_dir"] + config_dict["pk_galaxy_file"])
     C_G = model.get_mt_gaussian_covariance()
 
     # test if matrix (and all sub-matrices) is positive definite
-    test_matrix(C_G, model.num_spectra, int(model.num_kbins))
+    test_matrix(C_G, model.num_spectra, model.num_kbins)
 
     keys = list(range(model.num_zbins))
     save_file = config_dict["output_dir"] + config_dict["covariance_file"]

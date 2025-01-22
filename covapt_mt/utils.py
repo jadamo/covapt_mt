@@ -85,7 +85,7 @@ def flip_axes(cov, nps:int, nk:int, nl:int):
     new_cov = tmp_cov.reshape(nps*nk*nl, nps*nk*nl)
     return new_cov
 
-def test_matrix(cov: list, num_spectra: int, num_kbins: int):
+def test_matrix(cov: list, num_spectra: int, num_kbins : list):
     """Tests if the given list of covariacne matrices, and all sub-blocks, are positive-definite
     
     Args:
@@ -108,7 +108,7 @@ def test_matrix(cov: list, num_spectra: int, num_kbins: int):
         sub_test = 0
         for i in range(int(num_spectra)):
             for j in range(int(num_spectra)):
-                C_sub = cov[z][i*2*num_kbins: (i+1)*2*num_kbins,j*2*num_kbins: (j+1)*2*num_kbins]
+                C_sub = cov[z][i*2*int(num_kbins[z]): (i+1)*2*int(num_kbins[z]),j*2*int(num_kbins[z]): int((j+1)*2*num_kbins[z])]
                 try:
                     L = np.linalg.cholesky(C_sub)
                     #print("Partial covariance matrix ({:0.0f}, {:0.0f}) is positive-definite :)".format(i, j))

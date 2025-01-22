@@ -84,6 +84,7 @@ class Survey_Geometry_Kernels():
             self.randoms.append(randoms[subset_idx])
 
             self.I22[bin] = np.sum(self.randoms[bin]['NZ']**1 * self.randoms[bin]['WEIGHT_FKP']**2)
+            print("I_22 for bin {:0.0f} = {:0.2f}".format(bin, self.I22[bin]))
 
     def convert_to_distances(self, h:float, Om0:float):
         """Converts catalog redshifts to physical distances
@@ -341,7 +342,7 @@ class Survey_Geometry_Kernels():
             for i in range(1, len(self.kbin_edges[z])):
                 self.kbin_edges[z][i] = k_centers[z][i-1] + kbin_half_width
 
-        print("k bin edges:", self.kbin_edges)
+            print("k bin edges for zbin",z,":", self.kbin_edges[z])
 
     def fft(self, temp):
         """Does some shifting of the fft arrays"""
@@ -355,33 +356,33 @@ class Survey_Geometry_Kernels():
     
         return(temp2[ia-self.icut:ia+self.icut+1,ia-self.icut:ia+self.icut+1,ia-self.icut:ia+self.icut+1])
 
-    # def get_shell_modes(self):
-    #     """Calculates the specific kmodes present in a given k-bin based on the given survey propereies
+    def get_shell_modes(self):
+        """Calculates the specific kmodes present in a given k-bin based on the given survey propereies
         
-    #     Raises:
-    #         AssertionError: If one of the given k-bins has 0 k modes. This can happen if your box size is too small relative to your k-bin width
-    #     """
-    #     [ix,iy,iz] = np.zeros((3,2*self.Lm2+1,2*self.Lm2+1,2*self.Lm2+1))
-    #     Bin_kmodes=[]
-    #     Bin_ModeNum=np.zeros(self.nBins,dtype=int)
+        Raises:
+            AssertionError: If one of the given k-bins has 0 k modes. This can happen if your box size is too small relative to your k-bin width
+        """
+        [ix,iy,iz] = np.zeros((3,2*self.Lm2+1,2*self.Lm2+1,2*self.Lm2+1))
+        Bin_kmodes=[]
+        Bin_ModeNum=np.zeros(self.nBins,dtype=int)
 
-    #     for i in range(self.nBins): Bin_kmodes.append([])
-    #     for i in range(len(ix)):
-    #         ix[i,:,:]+=i-self.Lm2
-    #         iy[:,i,:]+=i-self.Lm2
-    #         iz[:,:,i]+=i-self.Lm2
+        for i in range(self.nBins): Bin_kmodes.append([])
+        for i in range(len(ix)):
+            ix[i,:,:]+=i-self.Lm2
+            iy[:,i,:]+=i-self.Lm2
+            iz[:,:,i]+=i-self.Lm2
 
-    #     rk=np.sqrt(ix**2+iy**2+iz**2)
-    #     sort=(rk*self.kfun/self.kbin_width).astype(int)
+        rk=np.sqrt(ix**2+iy**2+iz**2)
+        sort=(rk*self.kfun/self.kbin_width).astype(int)
 
-    #     for i in range(self.nBins):
-    #         ind=(sort==i)
-    #         Bin_ModeNum[i]=len(ix[ind])
-    #         Bin_kmodes[i]=np.hstack((ix[ind].reshape(-1,1),iy[ind].reshape(-1,1),iz[ind].reshape(-1,1),rk[ind].reshape(-1,1)))
+        for i in range(self.nBins):
+            ind=(sort==i)
+            Bin_ModeNum[i]=len(ix[ind])
+            Bin_kmodes[i]=np.hstack((ix[ind].reshape(-1,1),iy[ind].reshape(-1,1),iz[ind].reshape(-1,1),rk[ind].reshape(-1,1)))
         
-    #     assert np.all(Bin_ModeNum != 0), "ERROR! some bins have 0 k modes! Your box-size or kbin-width is probably too small"
+        assert np.all(Bin_ModeNum != 0), "ERROR! some bins have 0 k modes! Your box-size or kbin-width is probably too small"
         
-    #     return Bin_kmodes, Bin_ModeNum
+        return Bin_kmodes, Bin_ModeNum
     
     def ell_factor(self, l1, l2):
         """window function prefactors"""
@@ -409,18 +410,20 @@ class Survey_Geometry_Kernels():
             ix[i,:,:]+=i-self.icut; iy[:,i,:]+=i-self.icut; iz[:,:,i]+=i-self.icut
             
         # randomly select kmodes_sampled number of k-modes
+        #kmodes, Bin_ModeNum = self.get_shell_modes()
         kmodes = np.array([[sample_from_shell(kmin/self.kfun[zbin_idx], kmax/self.kfun[zbin_idx]) for _ in range(
-                           kmodes_sampled)] for kmin, kmax in zip(self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])])
+                            kmodes_sampled)] for kmin, kmax in zip(self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])])
         Nmodes = nmodes(self.box_size[zbin_idx]**3, self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])
-        # if (kmodes_sampled<self.Bin_ModeNum[kbin_idx]):
-        #     norm=kmodes_sampled
-        #     sampled=(np.random.rand(kmodes_sampled)*self.Bin_ModeNum[kbin_idx]).astype(int)
-        # else:
-        #     norm=self.Bin_ModeNum[kbin_idx]
-        #     sampled=np.arange(self.Bin_ModeNum[kbin_idx],dtype=int)
-
+        if (kmodes_sampled<Nmodes[kbin_idx]):
+           norm = kmodes_sampled
+           #sampled=(np.random.rand(kmodes_sampled)*Bin_ModeNum[kbin_idx]).astype(int)
+        else:
+           norm = Nmodes[kbin_idx]
+           #sampled=np.arange(Bin_ModeNum[kbin_idx],dtype=int)
         # Loop thru randomly-selected k-modes
+        #for mode in sampled:
         for mode in range(kmodes_sampled):
+            #[ik1x,ik1y,ik1z,rk1] = kmodes[kbin_idx, mode]
             [ik1x,ik1y,ik1z,rk1] = kmodes[kbin_idx, mode, :]
             if (rk1<=1e-10): 
                 k1xh=0
@@ -436,7 +439,7 @@ class Survey_Geometry_Kernels():
             k2yh=ik1y-iy
             k2zh=ik1z-iz
             rk2=np.sqrt(k2xh**2+k2yh**2+k2zh**2)
-            sort=(rk2*self.kfun/self.kbin_width).astype(int)-kbin_idx # to decide later which shell the k2 mode belongs to
+            sort=(rk2*self.kfun[zbin_idx]/self.kbin_width[zbin_idx]).astype(int)-kbin_idx # to decide later which shell the k2 mode belongs to
             ind=(rk2==0)
             if (ind.any()>0): rk2[ind]=1e10
             k2xh/=rk2; k2yh/=rk2; k2zh/=rk2
@@ -646,7 +649,7 @@ class Survey_Geometry_Kernels():
             if(i+kbin_idx-self.delta_k_max>=self.nBins[zbin_idx] or i+kbin_idx-self.delta_k_max<0): 
                 avgWij[i,:,:] *= 0
             else:
-                avgWij[i,:,:] /= Nmodes[kbin_idx + i - self.delta_k_max]
+                avgWij[i,:,:] /= (norm * Nmodes[kbin_idx + i - self.delta_k_max] * self.I22[zbin_idx]**2)
                 #avgWij[i]/=(norm*self.Bin_ModeNum[kbin_idx+i-self.delta_k_max]*self.I22**2)
         
         avgWij[:,:,0]*=self.ell_factor(0, 0)
