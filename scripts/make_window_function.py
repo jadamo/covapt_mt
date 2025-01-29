@@ -31,14 +31,8 @@ def main():
         key = "k_"+str(zbin)
         k_centers.append(k_data[key])
 
-    survey_kernels = window.Survey_Geometry_Kernels(config_dict["h"], 
-                                                    config_dict["Om0"],
-                                                    config_dict["zbins"],
-                                                    k_centers,
-                                                    config_dict["box_padding"],
-                                                    config_dict["input_dir"],
-                                                    config_dict["random_file_prefix"])
-
+    survey_kernels = window.Survey_Geometry_Kernels(config_dict, k_centers)
+    
     if not os.path.exists(config_dict["output_dir"]+'FFTWinFun.npy') or\
        config_dict["make_random_ffts"] == True:
         
@@ -77,15 +71,16 @@ def main():
 
     if config_dict["make_ssc_window"]:
         print("WARNING! This functionality does not work right now!")
-        print("\nStarting FFT calculations...")
-        t1 = time.time()
-        P_W = survey_kernels.calc_SSC_window_function(config_dict["fft_mesh_size"], config_dict["box_size"])
-        t2 = time.time()
-        print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
+        raise NotImplementedError
+        # print("\nStarting FFT calculations...")
+        # t1 = time.time()
+        # P_W = survey_kernels.calc_SSC_window_function(config_dict["fft_mesh_size"], config_dict["box_size"])
+        # t2 = time.time()
+        # print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
 
-        save_file = config_dict["output_dir"]+'WindowPowers.npy'
-        np.save(save_file,P_W)
-        print("SSC window functions saved to", save_file)
+        # save_file = config_dict["output_dir"]+'WindowPowers.npy'
+        # np.save(save_file,P_W)
+        # print("SSC window functions saved to", save_file)
 
 if __name__ == "__main__":
     main()

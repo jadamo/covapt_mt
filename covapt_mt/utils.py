@@ -108,7 +108,7 @@ def test_matrix(cov: list, num_spectra: int, num_kbins : list):
         sub_test = 0
         for i in range(int(num_spectra)):
             for j in range(int(num_spectra)):
-                C_sub = cov[z][i*2*int(num_kbins[z]): (i+1)*2*int(num_kbins[z]),j*2*int(num_kbins[z]): int((j+1)*2*num_kbins[z])]
+                C_sub = cov[z][i*3*int(num_kbins[z]): (i+1)*3*int(num_kbins[z]),j*3*int(num_kbins[z]): int((j+1)*3*num_kbins[z])]
                 try:
                     L = np.linalg.cholesky(C_sub)
                     #print("Partial covariance matrix ({:0.0f}, {:0.0f}) is positive-definite :)".format(i, j))

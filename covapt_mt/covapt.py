@@ -97,6 +97,8 @@ class covariance_model():
             self.num_spectra = pk_galaxy_raw[0].shape[0]
         else:
             pk_galaxy_raw = pk_data
+            # TODO: Come up with more robust way to do this
+            pk_galaxy_raw = pk_galaxy_raw.transpose(1, 0, 3, 2)
             self.num_spectra = pk_galaxy_raw.shape[1]
 
         # reformat into form Elisabeth's code expects
@@ -111,8 +113,8 @@ class covariance_model():
                 pk_galaxy[j, i, 0, :] = pk_galaxy_raw[z][idx, 0, :]
                 pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z][idx, 1, :]
                 pk_galaxy[j, i, 2, :] = pk_galaxy_raw[z][idx, 1, :]
-                # pk_galaxy[i, j, 4, :] = np.zeros(self.num_kbins)
-                # pk_galaxy[j, i, 4, :] = np.zeros(self.num_kbins)
+                pk_galaxy[i, j, 4, :] = pk_galaxy_raw[z][idx, 2, :]
+                pk_galaxy[j, i, 4, :] = pk_galaxy_raw[z][idx, 2, :]
                 idx +=1
             self.pk_galaxy.append(pk_galaxy)
             
@@ -376,7 +378,7 @@ class covariance_model():
         n_multi = int(self.num_tracers*(self.num_tracers+1)/2) # <- total # of auto + cross spectra
         covMat_all = []
         for z in range(self.num_zbins):
-            covMat=np.zeros((2*self.num_kbins[z]*n_multi,2*self.num_kbins[z]*n_multi))
+            covMat=np.zeros((3*self.num_kbins[z]*n_multi,3*self.num_kbins[z]*n_multi))
             n_AB = -1
             for A, B in itertools.product(range(self.num_tracers), repeat=2):
                 if B < A: continue
@@ -390,13 +392,18 @@ class covariance_model():
                             if(k+dk>=0 and k+dk<self.num_kbins[z]):
                                 # NOTE: This code can be upgraded to give l=4 gaussian covariance by using the other elements of cov_sub
                                 cov_sub = self.Cij_MT(k, dk, self.WijFile[z][k], pk_galaxy[z], A=A,B=B,C=C,D=D)
-                                covMat[n_AB*2*self.num_kbins[z]+k,n_CD*2*self.num_kbins[z]+k+dk]                                  = cov_sub[0]
-                                covMat[n_AB*2*self.num_kbins[z]+self.num_kbins[z]+k,n_CD*2*self.num_kbins+self.num_kbins[z]+k+dk] = cov_sub[1]
-                                covMat[n_AB*2*self.num_kbins[z]+self.num_kbins[z]+k,n_CD*2*self.num_kbins[z]+k+dk]                = cov_sub[3]
-                                covMat[n_AB*2*self.num_kbins[z]+k,n_CD*2*self.num_kbins[z]+self.num_kbins[z]+k+dk]                = cov_sub[3]
+                                blk_idx = self.num_kbins[z]
+                                covMat[n_AB*3*blk_idx+k, n_CD*3*blk_idx+k+dk]                        = cov_sub[0]
+                                covMat[n_AB*3*blk_idx+blk_idx+k, n_CD*3*blk_idx+blk_idx+k+dk]        = cov_sub[1]
+                                covMat[n_AB*3*blk_idx+2*blk_idx+k, n_CD*3*blk_idx+(2*blk_idx)+k+dk]  = cov_sub[2]
+                                covMat[n_AB*3*blk_idx+blk_idx+k, n_CD*3*blk_idx+k+dk]                = cov_sub[3]
+                                covMat[n_AB*3*blk_idx+k, n_CD*3*blk_idx+blk_idx+k+dk]                = cov_sub[3]
+                                covMat[n_AB*3*blk_idx+2*blk_idx+k, n_CD*3*blk_idx+k+dk]              = cov_sub[4]
+                                covMat[n_AB*3*blk_idx+2*blk_idx+k, n_CD*3*blk_idx+blk_idx+k+dk]      = cov_sub[5]
                         #covMat[n_AB*2*num_kbins:n_AB*2*num_kbins+num_kbins,n_CD*2*num_kbins+num_kbins:n_CD*2*num_kbins+num_kbins*2]=np.transpose(covMat[num_kbins:num_kbins*2,:num_kbins])
             
             covMat_all.append((covMat+np.transpose(covMat))/2.)
+            #covMat_all.append(covMat)
         return(covMat_all)
 
     #-------------------------------------------------------------------

@@ -4,10 +4,12 @@
 import os
 import numpy as np
 from numpy import conj
-from nbodykit.source.catalog import HDFCatalog, FITSCatalog
+from scipy.interpolate import InterpolatedUnivariateSpline
+from nbodykit.source.catalog import ArrayCatalog, FITSCatalog
 from nbodykit.lab import cosmology, transform
 import dask.array as da
 import itertools as itt
+import h5py
 
 from nbodykit import set_options
 #set_options(global_cache_size=2e9)
@@ -19,8 +21,7 @@ class Survey_Geometry_Kernels():
     Class that contains functions needed to calculate the covariance matrix window functions
     given a survey-like geometry 
     """
-    def __init__ (self, h:float, Om0:float, zbins, k_centers:list, box_padding,
-                  data_dir="", random_file=""):
+    def __init__ (self, config_dict, k_centers:list):
         """Constructs Survey_Window_Kernels object
 
         Args:
@@ -32,12 +33,15 @@ class Survey_Geometry_Kernels():
         Raises:
             IOError: If random catalog doesn't exist in the specified directory
         """
+        self.cosmo = cosmology.Cosmology(h=config_dict["h"]).match(Omega0_m=config_dict["Om0"])
 
         # load in random catalog
-        self.load_survey_randoms(zbins, data_dir, random_file)
+        self.load_survey_randoms(config_dict["zbins"], 
+                                 config_dict["input_dir"], 
+                                 config_dict["random_file_prefix"])
 
         # convert redshifts to physical distances based on some catalog cosmology
-        self.convert_to_distances(h, Om0)
+        self.convert_to_distances()
 
         # calculate bin edges and width from the k centers
         self.get_k_bin_edges(k_centers)
@@ -47,7 +51,7 @@ class Survey_Geometry_Kernels():
         self.icut=15; # needs to be less than Lm//2 (Lm: size of FFT)
 
         # infer the box size from random catalogs
-        self.calculate_survey_properties(box_padding)
+        self.calculate_survey_properties(config_dict)
 
         # number of k-bins on each side of the diaganal to calculate
         # Should be kept small, since the Gaussian covariance drops quickly away from the diag
@@ -74,9 +78,9 @@ class Survey_Geometry_Kernels():
             random_file = random_file_prefix+"bin"+str(bin)
             # TODO: Update to match Henry's file format when he gives you it
             if not os.path.exists(data_dir+random_file+".fits") and \
-               not os.path.exists(data_dir+random_file+".hdf5"):
+               not os.path.exists(data_dir+random_file+".h5"):
                 raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
-            try:    randoms = HDFCatalog(data_dir+random_file+".hdf5")
+            try:    randoms = self.load_h5_catalog(data_dir+random_file+".h5")
             except: randoms = FITSCatalog(data_dir+random_file+".fits")
             
             bin_name = "bin"+str(bin+1)
@@ -86,25 +90,67 @@ class Survey_Geometry_Kernels():
             self.I22[bin] = np.sum(self.randoms[bin]['NZ']**1 * self.randoms[bin]['WEIGHT_FKP']**2)
             print("I_22 for bin {:0.0f} = {:0.2f}".format(bin, self.I22[bin]))
 
-    def convert_to_distances(self, h:float, Om0:float):
+    def load_h5_catalog(self, file_path):
+        with h5py.File(file_path, "r") as f:
+            # Print all root level object names (aka keys) 
+            # these can be group or dataset names 
+            print("Keys: %s" % f.keys())
+            print(len(f["position_x"]))
+
+            random = ArrayCatalog({'OriginalPosition' : np.array([f["position_x"], f["position_y"], f["position_z"]]).T,\
+                                   "WEIGHT_FKP" : np.array(f["fkp_weights"])})
+
+            random = self.calculate_nz(random)
+            return random
+
+    def get_dVolume_dz(self, z_bins):
+        dummy_dict = np.empty(len(z_bins), dtype=[("ra", "f4"), ("dec", "f4"), ("z", "f4")])
+        dummy_dict["ra"] = np.zeros(len(z_bins)); dummy_dict["dec"] = np.zeros(len(z_bins)); dummy_dict["z"] = z_bins
+        dummy_cat = ArrayCatalog(dummy_dict)
+
+        # this outputs positions in Mpc/h
+        position = (transform.SkyToCartesian(dummy_cat["ra"], dummy_cat["dec"], dummy_cat["z"],degrees=True, cosmo=self.cosmo)).compute()
+        d = np.sqrt(position[:,0]**2 + position[:,1]**2 + position[:,2]**2)
+        dV = np.zeros(len(d)-1)
+        
+        for i in range(len(dV)):
+            dV[i] = 4./3. * np.pi * (d[i+1]**3 - d[i]**3)
+        return dV
+
+    def calculate_nz(self, randoms):
+        
+        if "NZ" in randoms.columns: return randoms
+
+        if "Z" not in randoms.columns:
+            randoms["RA"], randoms["DEC"], randoms["Z"] = transform.CartesianToSky(randoms["OriginalPosition"], self.cosmo)
+        
+        print("Computing n(z) from input random catalog...")
+        nbar, z_edges = np.histogram(randoms["Z"].compute(), bins=100) # Gives N = n*V
+        dV_dz = self.get_dVolume_dz(z_edges)
+        
+        nbar = nbar / dV_dz
+        z_centers = np.zeros(len(nbar))
+        for i in range(len(z_centers)):
+            z_centers[i] = (z_edges[i] + z_edges[i+1]) / 2.
+
+        # finally, interpolate
+        nbar_func = InterpolatedUnivariateSpline(z_centers, nbar)
+        randoms["NZ"] = nbar_func(randoms["Z"])
+        return randoms
+
+    def convert_to_distances(self):
         """Converts catalog redshifts to physical distances
         
         To convert to distances this function uses an assumed "catalog" cosmology
         that is specified by the user.
-
-        Args:
-            h: Hubble parameter for the catalog cosmology
-            Om0: present matter density parameter for the catalog cosmology
         """
-
-        cosmo = cosmology.Cosmology(h=h).match(Omega0_m=Om0)
-
         for bin in range(self.num_zbins):
+            if 'OriginalPosition' in self.randoms[bin].columns: continue
             self.randoms[bin]['OriginalPosition'] = transform.SkyToCartesian(
                 self.randoms[bin]['RA'],
                 self.randoms[bin]['DEC'],
                 self.randoms[bin]['Z'], 
-                degrees=True, cosmo=cosmo)
+                degrees=True, cosmo=self.cosmo)
 
     def num_ffts(self, n):
         """Returns the number of FFTs to do at a given order n"""
@@ -124,7 +170,7 @@ class Survey_Geometry_Kernels():
             window_p[i]=np.average(arr[ind])
         return(np.real(window_p))
 
-    def calculate_survey_properties(self, box_padding):
+    def calculate_survey_properties(self, config_dict):
         """Infers the box size and fundamental k mode from the input random catalog"""
         self.box_size = []
         self.Lm2 = []
@@ -136,7 +182,13 @@ class Survey_Geometry_Kernels():
                                - min(da.min(self.randoms[z]["OriginalPosition"][0]),
                                      da.min(self.randoms[z]["OriginalPosition"][1]),
                                      da.min(self.randoms[z]["OriginalPosition"][2])))
-            self.box_size[z] = self.box_size[z].compute() * box_padding
+            if "box_size" in config_dict.keys():
+                self.box_size[z] = config_dict["box_size"]
+            elif "box_padding" in config_dict.keys():
+                self.box_size[z] = self.box_size[z].compute() * config_dict["box_padding"]
+            else:
+                print("WARNING! Neither box_size or padding specified! Defaulting to infered size")
+
             self.kfun.append(2.*np.pi/self.box_size[z])
             self.Lm2.append(int(self.kbin_width[z]*self.nBins[z]/self.kfun[z])+1)
             
