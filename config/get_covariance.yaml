@@ -1,34 +1,36 @@
-input_dir : "/Users/JoeyA/Research/SPHEREx/covapt_mt/data/input_data/"
-output_dir : "/Users/JoeyA/Research/SPHEREx/covapt_mt/data/output_data/"
+input_dir : "/home/joeadamo/Research/SPHEREx/covapt_mt/data/input_data/m2e/"
+output_dir : "/home/joeadamo/Research/SPHEREx/covapt_mt/data/output_data/m2e/"
 
 # parameters for producing the window function
 make_gaussian_window : False
 make_ssc_window : False # <- currently not configured for multi-tracer!
 make_random_ffts: False
-random_file_prefix : "random_emu_test_"
-window_file_prefix : "Wij_emu_test_"
-fft_mesh_size : 50
+random_file_prefix : ln_rsd_rand_
+#random_file_prefix : "boss_data/random0_DR12v5_CMASS_North"
+window_file_prefix : "Wij_m2e_test_"
+fft_mesh_size : 128
 # Amount to pad the box size by (multiplicitave)
-# NOTE: Henry is using a box-size of 4000 Mpc/h, so this should be close to that
-box_padding : 1.5
+# OR specify the box size directly
+#box_padding : 1.5
+box_size : 4000 # Mpc/h
 # number of kmodes to sample
 # The default used by Jay Wadekar was 25000, which was run on a cluster
 kmodes_sampled : 1000
-num_processes : 12
+num_processes : 14
 num_tracers : 1
 zbins:
-  bin1_lo : 0.5
-  bin1_hi : 0.75
+  bin1_lo : 0.2
+  bin1_hi : 0.4
 
 h : 0.7
 Om0 : 0.31
 
 make_Gaussian_cov : True
-k_array_file : "k_emu_test.npz"
-pk_galaxy_file : "ps_emu_test_1_tracer.npy"
-covariance_file : "cov_single_tracer.npz"
+k_array_file : "kbins.npz"
+pk_galaxy_file : "ps_interp.npy"
+covariance_file : "cov_m2e_with_quadropole.npz"
 
-alpha : [0.07, 0.07, 0.07]
+alpha : [0.07]
+# just set to a small number for now, more robust option when we have real randoms
+#alpha : [0.07, 0.07]
 #alpha : [0.07, 0.406] #, 0.522] 
-#n_galaxy: [0.0003]
-n_galaxy : [.000501, 0.00282] #, 0.00362]s
