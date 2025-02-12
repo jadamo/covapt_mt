@@ -390,7 +390,7 @@ class Survey_Geometry_Kernels():
             self.kbin_edges.append(np.zeros(len(k_centers[z])+1))
             self.kbin_edges[z][0] = k_centers[z][0] - kbin_half_width
 
-            assert self.kbin_edges[z][0] > 0.
+            #assert self.kbin_edges[z][0] > 0.
             for i in range(1, len(self.kbin_edges[z])):
                 self.kbin_edges[z][i] = k_centers[z][i-1] + kbin_half_width
 

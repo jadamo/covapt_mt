@@ -124,7 +124,8 @@ class covariance_model():
         self.k = []
         self.num_kbins = np.zeros(self.num_zbins, dtype=np.int16)
         for zbin in range(self.num_zbins):
-            key = "k_"+str(zbin)
+            #key = "k_"+str(zbin)
+            key = "k"
             self.k.append(k_data[key])
             self.num_kbins[zbin] = len(self.k[zbin])
 

@@ -80,10 +80,16 @@ def flip_axes(cov, nps:int, nk:int, nl:int):
     Returns:
         new_cov: {np array} block covariance matrix with elements ordered as [nps, nk, nl]
     """
-    tmp_cov = cov.reshape(nps, nl, nk, nps, nl, nk)
-    tmp_cov = tmp_cov.transpose(0, 2, 1, 3, 5, 4)
-    new_cov = tmp_cov.reshape(nps*nk*nl, nps*nk*nl)
-    return new_cov
+    # TODO: Upgrade to handle different kbins for different redshift bins
+    cov_reshaped = np.zeros_like(cov)
+    print(cov_reshaped.shape)
+    assert cov_reshaped.shape[1] == nps*nk*nl, \
+    "mismatch between input dimensions and covariance!: " + str(cov.shape[1]) + "vs " + str(nps*nk*nl)
+    for z in range(cov_reshaped.shape[0]):
+        tmp_cov = cov[z].reshape(nps, nl, nk, nps, nl, nk)
+        tmp_cov = tmp_cov.transpose(0, 2, 1, 3, 5, 4)
+        cov_reshaped[z] = tmp_cov.reshape(nps*nk*nl, nps*nk*nl)
+    return cov_reshaped
 
 def test_matrix(cov: list, num_spectra: int, num_kbins : list):
     """Tests if the given list of covariacne matrices, and all sub-blocks, are positive-definite
