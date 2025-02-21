@@ -28,8 +28,9 @@ def main():
     num_zbins = int(len(config_dict["zbins"]) / 2)
     k_centers = []
     for zbin in range(num_zbins):
-        key = "k_"+str(zbin)
-        k_centers.append(k_data[key])
+        #key = "k_"+str(zbin)
+        key = "k"
+        k_centers.append(k_data[key] / 0.7)
 
     survey_kernels = window.Survey_Geometry_Kernels(config_dict, k_centers)
     

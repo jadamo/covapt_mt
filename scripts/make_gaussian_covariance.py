@@ -1,7 +1,7 @@
 import os, sys
 import numpy as np
 from covapt_mt.covapt import covariance_model
-from covapt_mt.utils import load_config_file, test_matrix
+from covapt_mt.utils import load_config_file, test_matrix, flip_axes
 
 def main():
 
@@ -26,13 +26,22 @@ def main():
     # test if matrix (and all sub-matrices) is positive definite
     test_matrix(C_G, model.num_spectra, model.num_kbins)
 
-    keys = list(range(model.num_zbins))
+    # Reformat to the shape Cosmo_Inference expects
+    num_spectra = int(config_dict["num_tracers"]*(config_dict["num_tracers"]+1)/2)
+    num_ells = 3
+    C_G_reshaped = flip_axes(C_G, num_spectra, len(model.get_k_bins()[0]), num_ells)
+    print(C_G_reshaped.shape)
+
     save_file = config_dict["output_dir"] + config_dict["covariance_file"]
-    save_data = {}
-    for z in range(model.num_zbins):
-        save_data["zbin_"+str(keys[z])] = C_G[z]
     print("Saving to " + save_file)
-    np.savez(save_file,**save_data)
+    if save_file[-4:] == ".npz":
+        keys = list(range(model.num_zbins))
+        save_data = {}
+        for z in range(model.num_zbins):
+            save_data["zbin_"+str(keys[z])] = C_G_reshaped[z]
+        np.savez(save_file,**save_data)
+    elif save_file[-4:] == ".npy":
+        np.save(save_file, C_G_reshaped)
 
 if __name__ == "__main__":
     main()
