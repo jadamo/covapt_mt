@@ -1,0 +1,10 @@
+name: covapt
+channels:
+  - defaults
+  - bccp
+dependencies:
+  - jupyter
+  - python=3.8
+  - tqdm
+  - nbodykit
+  - matplotlib
