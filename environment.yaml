@@ -8,4 +8,6 @@ dependencies:
   - tqdm
   - matplotlib
   - nbodykit
-  - cython
+platforms:  # need to exclude osx-arm64 because of nbodykit
+  - linux-64
+  - osx-64
