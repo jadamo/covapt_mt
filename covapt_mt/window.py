@@ -36,7 +36,8 @@ class Survey_Geometry_Kernels():
         self.cosmo = cosmology.Cosmology(h=config_dict["h"]).match(Omega0_m=config_dict["Om0"])
 
         # load in random catalog
-        self.load_survey_randoms(config_dict["zbins"], 
+        self.load_survey_randoms(config_dict["zbins"],
+                                 config_dict["num_tracers"] ,
                                  config_dict["input_dir"], 
                                  config_dict["random_file_prefix"])
 
@@ -60,7 +61,7 @@ class Survey_Geometry_Kernels():
         #if self.kfun > self.kbin_edges[1]:
         #    print("WARNING! fundamental k mode is larger than the smallest k bin! This might cause issues!")
 
-    def load_survey_randoms(self, zbins, data_dir, random_file_prefix=""):
+    def load_survey_randoms(self, zbins, num_tracers, data_dir, random_file_prefix=""):
         """Loads random survey catalog from an hdf5 file
         
         Args:
@@ -71,31 +72,32 @@ class Survey_Geometry_Kernels():
         """
         self.num_zbins = int(len(zbins) / 2)
         self.randoms = []
-        self.I22 = np.zeros(self.num_zbins)
+        self.I22 = np.zeros(self.num_zbins*num_tracers)
 
-        for bin in range(self.num_zbins):
+        idx = 0
+        for zbin in range(self.num_zbins):
+            for ps in range(num_tracers):
+                random_file = random_file_prefix+str(ps)+"_"+str(zbin)
+                # TODO: Update to match Henry's file format when he gives you it
+                if not os.path.exists(data_dir+random_file+".fits") and \
+                not os.path.exists(data_dir+random_file+".h5"):
+                    raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
+                try:    randoms = self.load_h5_catalog(data_dir+random_file+".h5")
+                except: randoms = FITSCatalog(data_dir+random_file+".fits")
             
-            random_file = random_file_prefix+"bin"+str(bin)
-            # TODO: Update to match Henry's file format when he gives you it
-            if not os.path.exists(data_dir+random_file+".fits") and \
-               not os.path.exists(data_dir+random_file+".h5"):
-                raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
-            try:    randoms = self.load_h5_catalog(data_dir+random_file+".h5")
-            except: randoms = FITSCatalog(data_dir+random_file+".fits")
-            
-            bin_name = "bin"+str(bin+1)
-            subset_idx = (randoms["Z"] < zbins[bin_name+"_hi"]) & (randoms["Z"] > zbins[bin_name+"_lo"])
-            self.randoms.append(randoms[subset_idx])
+                bin_name = "bin"+str(zbin+1)
+                subset_idx = (randoms["Z"] < zbins[bin_name+"_hi"]) & (randoms["Z"] > zbins[bin_name+"_lo"])
+                self.randoms.append(randoms[subset_idx])
 
-            self.I22[bin] = np.sum(self.randoms[bin]['NZ']**1 * self.randoms[bin]['WEIGHT_FKP']**2)
-            print("I_22 for bin {:0.0f} = {:0.2f}".format(bin, self.I22[bin]))
+                self.I22[idx] = np.sum(self.randoms[idx]['NZ']**1 * self.randoms[idx]['WEIGHT_FKP']**2)
+                print("I_22 for bin {:0.0f} = {:0.2f}".format(idx, self.I22[idx]))
+                idx+= 1
 
     def load_h5_catalog(self, file_path):
         with h5py.File(file_path, "r") as f:
             # Print all root level object names (aka keys) 
             # these can be group or dataset names 
-            print("Keys: %s" % f.keys())
-            print(len(f["position_x"]))
+            print("loading " + str(len(f["position_x"])) + " galaxies...")
 
             random = ArrayCatalog({'OriginalPosition' : np.array([f["position_x"], f["position_y"], f["position_z"]]).T,\
                                    "WEIGHT_FKP" : np.array(f["fkp_weights"])})
@@ -158,7 +160,7 @@ class Survey_Geometry_Kernels():
 
     def shift_positions(self):
         """Shifts positions to be centered on the box"""
-        for bin in range(self.num_zbins):
+        for bin in range(len(self.randoms)):
             #self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition']
             self.randoms[bin]['Position'] = self.randoms[bin]['OriginalPosition'] + da.array(3*[self.box_size[bin]/2])
 
@@ -175,27 +177,27 @@ class Survey_Geometry_Kernels():
         self.box_size = []
         self.Lm2 = []
         self.kfun = []
-        for z in range(self.num_zbins):
-            self.box_size.append(max(da.max(self.randoms[z]["OriginalPosition"][0]),
-                                     da.max(self.randoms[z]["OriginalPosition"][1]),
-                                     da.max(self.randoms[z]["OriginalPosition"][2])) \
-                               - min(da.min(self.randoms[z]["OriginalPosition"][0]),
-                                     da.min(self.randoms[z]["OriginalPosition"][1]),
-                                     da.min(self.randoms[z]["OriginalPosition"][2])))
+        for idx in range(len(self.randoms)):
+            self.box_size.append(max(da.max(self.randoms[idx]["OriginalPosition"][0]),
+                                     da.max(self.randoms[idx]["OriginalPosition"][1]),
+                                     da.max(self.randoms[idx]["OriginalPosition"][2])) \
+                               - min(da.min(self.randoms[idx]["OriginalPosition"][0]),
+                                     da.min(self.randoms[idx]["OriginalPosition"][1]),
+                                     da.min(self.randoms[idx]["OriginalPosition"][2])))
             if "box_size" in config_dict.keys():
-                self.box_size[z] = config_dict["box_size"]
+                self.box_size[idx] = config_dict["box_size"]
             elif "box_padding" in config_dict.keys():
-                self.box_size[z] = self.box_size[z].compute() * config_dict["box_padding"]
+                self.box_size[idx] = self.box_size[idx].compute() * config_dict["box_padding"]
             else:
                 print("WARNING! Neither box_size or padding specified! Defaulting to infered size")
 
-            self.kfun.append(2.*np.pi/self.box_size[z])
-            self.Lm2.append(int(self.kbin_width[z]*self.nBins[z]/self.kfun[z])+1)
+            self.kfun.append(2.*np.pi/self.box_size[idx])
+            self.Lm2.append(int(self.kbin_width[idx]*self.nBins[idx]/self.kfun[idx])+1)
             
-            assert self.icut < (self.Lm2[z] / 2)
-            print("min / max redshift: [{:0.2f}, {:0.2f}]".format(da.min(self.randoms[z]["Z"]).compute(),
-                                                                  da.max(self.randoms[z]["Z"]).compute()))
-            print("using box size of {:0.1f} Mpc/h, fundamental k-mode = {:0.3e} h/Mpc".format(self.box_size[z], self.kfun[z]))
+            assert self.icut < (self.Lm2[idx] / 2)
+            print("min / max redshift: [{:0.2f}, {:0.2f}]".format(da.min(self.randoms[idx]["Z"]).compute(),
+                                                                  da.max(self.randoms[idx]["Z"]).compute()))
+            print("using box size of {:0.1f} Mpc/h, fundamental k-mode = {:0.3e} h/Mpc".format(self.box_size[idx], self.kfun[idx]))
 
     def calc_FFTs(self, Nmesh, names):
         """Calculates and returns Fast Fourier Transforms of the random catalog
@@ -206,10 +208,10 @@ class Survey_Geometry_Kernels():
             Nmesh: The size of the FFT mesh
         """
 
-        export=np.zeros((self.num_zbins, 2*(1+self.num_ffts(2)+self.num_ffts(4)),Nmesh,Nmesh,Nmesh),dtype='complex128')
+        export=np.zeros((len(self.randoms), 2*(1+self.num_ffts(2)+self.num_ffts(4)),Nmesh,Nmesh,Nmesh),dtype='complex128')
 
-        for bin in range(self.num_zbins):
-            print("zbin " + str(bin))
+        for bin in range(len(self.randoms)):
+            print("window " + str(bin))
             r = self.randoms[bin]['OriginalPosition'].T
             ind=0
             for w in names:
@@ -267,9 +269,9 @@ class Survey_Geometry_Kernels():
         """
         # Shifting the points such that the survey center is in the center of the box
         self.shift_positions()
-        for bin in range(self.num_zbins):
-            self.randoms[bin]['W12'] = self.randoms[bin]['WEIGHT_FKP']**2 
-            self.randoms[bin]['W22'] = (self.randoms[bin]['WEIGHT_FKP']**2) * self.randoms[bin]['NZ']
+        for idx in range(len(self.randoms)):
+            self.randoms[idx]['W12'] = self.randoms[idx]['WEIGHT_FKP']**2 
+            self.randoms[idx]['W22'] = (self.randoms[idx]['WEIGHT_FKP']**2) * self.randoms[idx]['NZ']
 
         return self.calc_FFTs(Nmesh, ["W22", "W12"])
     
@@ -383,18 +385,18 @@ class Survey_Geometry_Kernels():
         self.kbin_width = []
         self.kbin_edges = []
         self.nBins = []
-        for z in range(self.num_zbins):
-            self.kbin_width.append(k_centers[z][-1] - k_centers[z][-2])
-            self.nBins.append(len(k_centers[z]))
-            kbin_half_width = self.kbin_width[z] / 2.
-            self.kbin_edges.append(np.zeros(len(k_centers[z])+1))
-            self.kbin_edges[z][0] = k_centers[z][0] - kbin_half_width
+        for idx in range(len(self.randoms)):
+            self.kbin_width.append(k_centers[idx][-1] - k_centers[idx][-2])
+            self.nBins.append(len(k_centers[idx]))
+            kbin_half_width = self.kbin_width[idx] / 2.
+            self.kbin_edges.append(np.zeros(len(k_centers[idx])+1))
+            self.kbin_edges[idx][0] = k_centers[idx][0] - kbin_half_width
 
             #assert self.kbin_edges[z][0] > 0.
-            for i in range(1, len(self.kbin_edges[z])):
-                self.kbin_edges[z][i] = k_centers[z][i-1] + kbin_half_width
+            for i in range(1, len(self.kbin_edges[idx])):
+                self.kbin_edges[idx][i] = k_centers[idx][i-1] + kbin_half_width
 
-            print("k bin edges for zbin",z,":", self.kbin_edges[z])
+            print("k bin edges for bin",idx,":", self.kbin_edges[idx])
 
     def fft(self, temp):
         """Does some shifting of the fft arrays"""
@@ -440,7 +442,7 @@ class Survey_Geometry_Kernels():
         """window function prefactors"""
         return (2*l1 + 1) * (2*l2 + 1) * (2 if 0 in (l1, l2) else 1)
 
-    def calc_gaussian_window_function(self, kbin_idx : int, zbin_idx, kmodes_sampled : int =400):
+    def calc_gaussian_window_function(self, kbin_idx : int, bin_idx, kmodes_sampled : int =400):
         """Returns the window function of a specific k-bin for l=0,2,and 4 auto + cross covariance
         
         NOTE: This function is computationally expensive and should be run in parralel
@@ -463,9 +465,9 @@ class Survey_Geometry_Kernels():
             
         # randomly select kmodes_sampled number of k-modes
         #kmodes, Bin_ModeNum = self.get_shell_modes()
-        kmodes = np.array([[sample_from_shell(kmin/self.kfun[zbin_idx], kmax/self.kfun[zbin_idx]) for _ in range(
-                            kmodes_sampled)] for kmin, kmax in zip(self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])])
-        Nmodes = nmodes(self.box_size[zbin_idx]**3, self.kbin_edges[zbin_idx][:-1], self.kbin_edges[zbin_idx][1:])
+        kmodes = np.array([[sample_from_shell(kmin/self.kfun[bin_idx], kmax/self.kfun[bin_idx]) for _ in range(
+                            kmodes_sampled)] for kmin, kmax in zip(self.kbin_edges[bin_idx][:-1], self.kbin_edges[bin_idx][1:])])
+        Nmodes = nmodes(self.box_size[bin_idx]**3, self.kbin_edges[bin_idx][:-1], self.kbin_edges[bin_idx][1:])
         if (kmodes_sampled<Nmodes[kbin_idx]):
            norm = kmodes_sampled
            #sampled=(np.random.rand(kmodes_sampled)*Bin_ModeNum[kbin_idx]).astype(int)
@@ -491,7 +493,7 @@ class Survey_Geometry_Kernels():
             k2yh=ik1y-iy
             k2zh=ik1z-iz
             rk2=np.sqrt(k2xh**2+k2yh**2+k2zh**2)
-            sort=(rk2*self.kfun[zbin_idx]/self.kbin_width[zbin_idx]).astype(int)-kbin_idx # to decide later which shell the k2 mode belongs to
+            sort=(rk2*self.kfun[bin_idx]/self.kbin_width[bin_idx]).astype(int)-kbin_idx # to decide later which shell the k2 mode belongs to
             ind=(rk2==0)
             if (ind.any()>0): rk2[ind]=1e10
             k2xh/=rk2; k2yh/=rk2; k2zh/=rk2
@@ -698,10 +700,10 @@ class Survey_Geometry_Kernels():
         
         # divide by the number of k-modes to get the average
         for i in range(0,2*self.delta_k_max+1):
-            if(i+kbin_idx-self.delta_k_max>=self.nBins[zbin_idx] or i+kbin_idx-self.delta_k_max<0): 
+            if(i+kbin_idx-self.delta_k_max>=self.nBins[bin_idx] or i+kbin_idx-self.delta_k_max<0): 
                 avgWij[i,:,:] *= 0
             else:
-                avgWij[i,:,:] /= (norm * Nmodes[kbin_idx + i - self.delta_k_max] * self.I22[zbin_idx]**2)
+                avgWij[i,:,:] /= (norm * Nmodes[kbin_idx + i - self.delta_k_max] * self.I22[bin_idx]**2)
                 #avgWij[i]/=(norm*self.Bin_ModeNum[kbin_idx+i-self.delta_k_max]*self.I22**2)
         
         avgWij[:,:,0]*=self.ell_factor(0, 0)

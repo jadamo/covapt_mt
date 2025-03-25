@@ -26,15 +26,16 @@ def main():
     # TODO: update this once I get a k array file from Chen / Henry
     k_data = np.load(config_dict["input_dir"]+config_dict["k_array_file"])
     num_zbins = int(len(config_dict["zbins"]) / 2)
+    num_tracers = int(config_dict["num_tracers"])
     k_centers = []
-    for zbin in range(num_zbins):
-        #key = "k_"+str(zbin)
+    for idx in range(num_zbins*num_tracers):
+        #key = "k_"+str(idx)
         key = "k"
-        k_centers.append(k_data[key] / 0.7)
+        k_centers.append(k_data[key])# / 0.7)
 
     survey_kernels = window.Survey_Geometry_Kernels(config_dict, k_centers)
     
-    if not os.path.exists(config_dict["output_dir"]+'FFTWinFun.npy') or\
+    if not os.path.exists(config_dict["output_dir"]+'FFTWinFun.npy') or \
        config_dict["make_random_ffts"] == True:
         
         print("\nStarting FFT calculations...")
@@ -51,20 +52,20 @@ def main():
         t1 = time.time()
         # TODO: find a faster way to loop thru redshift bins
         # For now, save the window functions in seperate files
-        for z_idx in range(num_zbins):
-            print("Sampling {:0.0f} kmodes for zbin {:0.0f} with {:0.0f} processes...".format(config_dict["kmodes_sampled"], z_idx, config_dict["num_processes"]))
+        for idx in range(num_zbins*num_tracers):
+            print("Sampling {:0.0f} kmodes for bin {:0.0f} with {:0.0f} processes...".format(config_dict["kmodes_sampled"], idx, config_dict["num_processes"]))
             #Wij = np.zeros((len(k_centers[z_idx]), 7, 15, 6))
-            k_idx = range(len(k_centers[z_idx]))
+            k_idx = range(len(k_centers[idx]))
 
-            survey_kernels.load_fft_file(config_dict["output_dir"], z_idx)
+            survey_kernels.load_fft_file(config_dict["output_dir"], idx)
             #for tqdm(range(len(k_centers[z_idx])), desc='Computing window kernels'):
             p = Pool(processes=config_dict["num_processes"])
             Wij=p.starmap(survey_kernels.calc_gaussian_window_function, 
-                          zip(k_idx, repeat(z_idx), repeat(config_dict["kmodes_sampled"])))
+                          zip(k_idx, repeat(idx), repeat(config_dict["kmodes_sampled"])))
             p.close()
             p.join()
 
-            save_file = config_dict["output_dir"]+config_dict["window_file_prefix"]+str(z_idx)+".npy"
+            save_file = config_dict["output_dir"]+"Wij"+str(idx)+".npy"
             np.save(save_file, Wij)
             print("window function saved to", save_file)
         t2 = time.time()

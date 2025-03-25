@@ -107,7 +107,7 @@ def test_matrix(cov: list, num_spectra: int, num_kbins : list):
             print("Covariance matrix for zbin " + str(z) + " is positive definite! :)")
         except:
             print("WARNING! Covariance matrix for zbin " + str(z) + " is not positive definite!")
-            eigvals = np.linalg.eigvals(cov[z])
+            eigvals = np.linalg.eigvals(cov[z]).real
             print("There are {:0.0f} negative eigenvalues, smallest value = {:0.3e}".format(len(eigvals[(eigvals < 0)]), np.amin(eigvals)))
 
         # test if partial matrices are positive-definite

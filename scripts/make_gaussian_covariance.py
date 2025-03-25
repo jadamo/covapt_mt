@@ -19,7 +19,7 @@ def main():
                              num_zbins, 
                              config_dict["input_dir"] + config_dict["k_array_file"],
                              config_dict["alpha"],  
-                             window_dir=config_dict["output_dir"] + config_dict["window_file_prefix"])
+                             window_dir=config_dict["output_dir"])
     model.load_power_spectrum(config_dict["input_dir"] + config_dict["pk_galaxy_file"])
     C_G = model.get_mt_gaussian_covariance()
 
@@ -28,20 +28,21 @@ def main():
 
     # Reformat to the shape Cosmo_Inference expects
     num_spectra = int(config_dict["num_tracers"]*(config_dict["num_tracers"]+1)/2)
-    num_ells = 3
+    num_ells = 2
     C_G_reshaped = flip_axes(C_G, num_spectra, len(model.get_k_bins()[0]), num_ells)
     print(C_G_reshaped.shape)
 
-    save_file = config_dict["output_dir"] + config_dict["covariance_file"]
-    print("Saving to " + save_file)
-    if save_file[-4:] == ".npz":
-        keys = list(range(model.num_zbins))
-        save_data = {}
+    if config_dict["save_inverse"] == True:
+        print("Inverting covariance...")
         for z in range(model.num_zbins):
-            save_data["zbin_"+str(keys[z])] = C_G_reshaped[z]
-        np.savez(save_file,**save_data)
-    elif save_file[-4:] == ".npy":
-        np.save(save_file, C_G_reshaped)
+            C_G_reshaped[z] = np.linalg.inv(C_G_reshaped[z])
+        save_file = config_dict["output_dir"] + "invcov.npy"
+
+    else:
+        save_file = config_dict["output_dir"] + "cov.npy"
+
+    print("Saving to " + save_file)
+    np.save(save_file, C_G_reshaped)
 
 if __name__ == "__main__":
     main()
