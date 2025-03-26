@@ -3,10 +3,6 @@ Refactoring of CovaPT with (Gaussian) multi-tracer covariance for use in SPHEREx
 
 
 ## Install
-On MacOS Arm architecture, run
+There is an install script now:
 
-    conda config --env --set subdir osx-64
-
-    pip install nbodykit
-
-inside the conda environment.
+    $ ./install.sh
