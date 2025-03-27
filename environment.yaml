@@ -1,10 +1,16 @@
+# NOTE: This is copying covapt_mt's environment.yaml since it has special restrictions.
+# These restrictions (python=3.7 and no arm64 for nbodykit) can lift once we switch 
+# to DESI covariance code.
 name: covapt
 channels:
   - defaults
   - bccp
 dependencies:
   - jupyter
-  - python=3.8
+  - python=3.7  # for nbodykit
   - tqdm
-  - nbodykit
   - matplotlib
+  - nbodykit
+platforms:  # need to exclude osx-arm64 because of nbodykit
+  - linux-64
+  - osx-64
