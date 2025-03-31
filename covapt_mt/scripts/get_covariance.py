@@ -1,5 +1,5 @@
-from .make_gaussian_covariance import make_gaussian_covariance
-from .make_window_function import make_window_function
+from ..make_gaussian_covariance import make_gaussian_covariance
+from ..make_window_function import make_window_function
 
 def get_covariance(yaml_file):
 
