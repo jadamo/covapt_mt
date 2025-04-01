@@ -1,6 +1,3 @@
-# NOTE: This is copying covapt_mt's environment.yaml since it has special restrictions.
-# These restrictions (python=3.7 and no arm64 for nbodykit) can lift once we switch 
-# to DESI covariance code.
 name: covapt
 channels:
   - defaults
@@ -11,6 +8,8 @@ dependencies:
   - tqdm
   - matplotlib
   - nbodykit
+  - mpi4py
+  # NOTE: mpi4py is only needed so that a version of mpich gets installed that works locally. While we don't have a full understanding of what is happening, here is what I gather: MPICH has two types of packages: a full one, and one that is essentially a shim to an externally (non-conda) installed mpich. nbodykit prefers the externally installed one. However, that means it doesn't work on ARM CPUs unless you also externally install such x86_64-compatible MPICH, which we generally don't. However, by requiring `mpi4py`, the conda package resolver prefers an mpich version that comes with the full implementation from a conda package.
 platforms:  # need to exclude osx-arm64 because of nbodykit
   - linux-64
   - osx-64
