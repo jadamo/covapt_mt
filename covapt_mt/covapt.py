@@ -76,11 +76,9 @@ class covariance_model():
 
         #Using the window kernels calculated from the survey random catalog as input
         self.WijFile = []
-        # HACK to test loading specific window functions
-        window_idx = [1,3]
         for zbin in range(self.num_zbins):
 
-            window_file = window_dir + "Wij" + str(window_idx[zbin])+".npy"
+            window_file = window_dir + "Wij" + str(zbin)+".npy"
             print("Loading window file from:", window_file)
             if not os.path.exists(window_file):
                 raise IOError("ERROR! Could not find", window_file)
