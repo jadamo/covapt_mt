@@ -8,7 +8,10 @@ You will need a valid version of anaconda / miniconda to use this repository. To
     $ ./install.sh
 
 ## Using the Code
-To Be Written
+Can call it with
+```
+python -m covapt_mt.scripts.get_covariance ./config/get_covariance.yaml
+```
 
 ## Credits
 This repository builds off of the original code written by Jay Wadekar, Roman Scoccimarro, and Otavio Alves. Any publications or material created that uses this code should cite the original repository (https://arxiv.org/abs/1910.02914).

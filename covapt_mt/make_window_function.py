@@ -9,13 +9,9 @@ from multiprocessing import Pool
 from covapt_mt import window
 from covapt_mt.utils import load_config_file
 
-def main():
+def make_window_function(yaml_file):
     
-    if len(sys.argv) < 2:
-        print("USAGE: python scripts/make_window_function.py <config_file>")
-        return 0
-    
-    config_dict = load_config_file(sys.argv[1])
+    config_dict = load_config_file(yaml_file)
 
     if config_dict["make_gaussian_window"] == False and config_dict["make_ssc_window"] == False:
         return 0
@@ -83,6 +79,3 @@ def main():
         # save_file = config_dict["output_dir"]+'WindowPowers.npy'
         # np.save(save_file,P_W)
         # print("SSC window functions saved to", save_file)
-
-if __name__ == "__main__":
-    main()

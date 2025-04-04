@@ -3,12 +3,9 @@ import numpy as np
 from covapt_mt.covapt import covariance_model
 from covapt_mt.utils import load_config_file, test_matrix, flip_axes
 
-def main():
+def make_gaussian_covariance(yaml_file):
 
-    if len(sys.argv) < 2:
-        print("USAGE: python scripts/make_window_function.py <config_file>")
-        return 0
-    config_dict = load_config_file(sys.argv[1])
+    config_dict = load_config_file(yaml_file)
 
     if config_dict["make_Gaussian_cov"] == False:
         return 0
@@ -44,5 +41,3 @@ def main():
     print("Saving to " + save_file)
     np.save(save_file, C_G_reshaped)
 
-if __name__ == "__main__":
-    main()
