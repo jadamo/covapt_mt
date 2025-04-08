@@ -78,12 +78,13 @@ class Survey_Geometry_Kernels():
         for zbin in range(self.num_zbins):
             for ps in range(num_tracers):
                 random_file = random_file_prefix+str(ps)+"_"+str(zbin)
+                random_file = os.path.join(data_dir, random_file)
                 # TODO: Update to match Henry's file format when he gives you it
-                if not os.path.exists(data_dir+random_file+".fits") and \
-                not os.path.exists(data_dir+random_file+".h5"):
+                if not os.path.exists(random_file+".fits") and \
+                not os.path.exists(random_file+".h5"):
                     raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
-                try:    randoms = self.load_h5_catalog(data_dir+random_file+".h5")
-                except: randoms = FITSCatalog(data_dir+random_file+".fits")
+                try:    randoms = self.load_h5_catalog(random_file+".h5")
+                except: randoms = FITSCatalog(random_file+".fits")
             
                 bin_name = "bin"+str(zbin+1)
                 subset_idx = (randoms["Z"] < zbins[bin_name+"_hi"]) & (randoms["Z"] > zbins[bin_name+"_lo"])
@@ -243,7 +244,7 @@ class Survey_Geometry_Kernels():
         """Loads and organizes information from the random catalog FFTs"""
 
         self.randoms = None # <- delete cashed randoms to save memory / allow multiprocessing to work
-        fft_file = data_dir+'FFTWinFun.npy'
+        fft_file = os.path.join(data_dir, 'FFTWinFun.npy')
         if not os.path.exists(fft_file):
             print("ERROR! could not find fft file", fft_file)
             raise IOError
