@@ -77,11 +77,12 @@ class Survey_Geometry_Kernels():
         idx = 0
         for zbin in range(self.num_zbins):
             for ps in range(num_tracers):
-                random_file = os.path.join(data_dir, random_file_prefix+str(ps)+"_"+str(zbin))
+                random_file_stem = random_file_prefix+str(ps)+"_"+str(zbin)
+                random_file = os.path.join(data_dir, random_file_stem)
                 # TODO: Update to match Henry's file format when he gives you it
                 if not os.path.exists(random_file+".fits") and \
                 not os.path.exists(random_file+".h5"):
-                    raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
+                    raise IOError("Could not find survey randoms catalog:", random_file)
                 try:    randoms = self.load_h5_catalog(random_file+".h5")
                 except: randoms = FITSCatalog(random_file+".fits")
             
