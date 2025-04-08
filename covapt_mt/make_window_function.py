@@ -20,7 +20,8 @@ def make_window_function(yaml_file):
     print("Calculating SSC window functions:", config_dict["make_ssc_window"])
 
     # TODO: update this once I get a k array file from Chen / Henry
-    k_data = np.load(config_dict["input_dir"]+config_dict["k_array_file"])
+    k_array_file = os.path.join(config_dict["input_dir"], config_dict["k_array_file"])
+    k_data = np.load(k_array_file)
     num_zbins = int(len(config_dict["zbins"]) / 2)
     num_tracers = int(config_dict["num_tracers"])
     k_centers = []
@@ -31,7 +32,9 @@ def make_window_function(yaml_file):
 
     survey_kernels = window.Survey_Geometry_Kernels(config_dict, k_centers)
     
-    if not os.path.exists(config_dict["output_dir"]+'FFTWinFun.npy') or \
+    fft_file = os.path.join(config_dict["output_dir"], 'FFTWinFun.npy')
+
+    if not os.path.exists(fft_file) or \
        config_dict["make_random_ffts"] == True:
         
         print("\nStarting FFT calculations...")
@@ -40,9 +43,8 @@ def make_window_function(yaml_file):
         t2 = time.time()
         print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
 
-        save_file = config_dict["output_dir"]+'FFTWinFun.npy'
-        np.save(save_file,export)
-        print("FFTs saved to", save_file)
+        np.save(fft_file, export)
+        print("FFTs saved to", fft_file)
 
     if config_dict["make_gaussian_window"]:
         t1 = time.time()
@@ -61,9 +63,10 @@ def make_window_function(yaml_file):
             p.close()
             p.join()
 
-            save_file = config_dict["output_dir"]+"Wij"+str(idx)+".npy"
+            save_file = os.path.join(config_dict["output_dir"], "Wij"+str(idx)+".npy")
             np.save(save_file, Wij)
             print("window function saved to", save_file)
+            
         t2 = time.time()
         print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
 
