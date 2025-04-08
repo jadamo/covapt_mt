@@ -77,8 +77,7 @@ class Survey_Geometry_Kernels():
         idx = 0
         for zbin in range(self.num_zbins):
             for ps in range(num_tracers):
-                random_file = random_file_prefix+str(ps)+"_"+str(zbin)
-                random_file = os.path.join(data_dir, random_file)
+                random_file = os.path.join(data_dir, random_file_prefix+str(ps)+"_"+str(zbin))
                 # TODO: Update to match Henry's file format when he gives you it
                 if not os.path.exists(random_file+".fits") and \
                 not os.path.exists(random_file+".h5"):
