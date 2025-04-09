@@ -24,8 +24,7 @@ def make_window_function(yaml_file):
     num_zbins = int(len(config_dict["zbins"]) / 2)
     num_tracers = int(config_dict["num_tracers"])
     k_centers = []
-    for idx in range(num_zbins*num_tracers):
-        #key = "k_"+str(idx)
+    for idx in range(num_zbins):
         key = "k"
         k_centers.append(k_data[key])# / 0.7)
 
@@ -48,7 +47,7 @@ def make_window_function(yaml_file):
         t1 = time.time()
         # TODO: find a faster way to loop thru redshift bins
         # For now, save the window functions in seperate files
-        for idx in range(num_zbins*num_tracers):
+        for idx in range(num_zbins):
             print("Sampling {:0.0f} kmodes for bin {:0.0f} with {:0.0f} processes...".format(config_dict["kmodes_sampled"], idx, config_dict["num_processes"]))
             #Wij = np.zeros((len(k_centers[z_idx]), 7, 15, 6))
             k_idx = range(len(k_centers[idx]))

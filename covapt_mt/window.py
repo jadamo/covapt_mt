@@ -37,7 +37,6 @@ class Survey_Geometry_Kernels():
 
         # load in random catalog
         self.load_survey_randoms(config_dict["zbins"],
-                                 config_dict["num_tracers"] ,
                                  config_dict["input_dir"], 
                                  config_dict["random_file_prefix"])
 
@@ -61,37 +60,46 @@ class Survey_Geometry_Kernels():
         #if self.kfun > self.kbin_edges[1]:
         #    print("WARNING! fundamental k mode is larger than the smallest k bin! This might cause issues!")
 
-    def load_survey_randoms(self, zbins, num_tracers, data_dir, random_file_prefix=""):
+    def load_survey_randoms(self, zbins, data_dir, random_file_prefix=""):
         """Loads random survey catalog from an hdf5 file
         
         Args:
             data_dir: location of survey random catalogs. Default the directory specified in config.py
         
         Raises:
-            IOError: If random catalog doesn't exist in the specified directory
+            FileNotFoundError: If random catalog doesn't exist in the specified directory
         """
         self.num_zbins = int(len(zbins) / 2)
         self.randoms = []
-        self.I22 = np.zeros(self.num_zbins*num_tracers)
+        self.I22 = np.zeros(self.num_zbins)
 
-        idx = 0
+        # NOTE: There is currently no consensus on whether we need multiple window functions for different 
+        # tracers. The current multi-tracer code assumes you have one window function per redshift bin. So for now,
+        # we will only load one random catalog per redshift bin, with the intention of investigating how much this
+        # choice matters later
         for zbin in range(self.num_zbins):
-            for ps in range(num_tracers):
-                random_file = random_file_prefix+str(ps)+"_"+str(zbin)
-                # TODO: Update to match Henry's file format when he gives you it
-                if not os.path.exists(data_dir+random_file+".fits") and \
-                not os.path.exists(data_dir+random_file+".h5"):
-                    raise IOError("Could not find survey randoms catalog:", data_dir+random_file)
-                try:    randoms = self.load_h5_catalog(data_dir+random_file+".h5")
-                except: randoms = FITSCatalog(data_dir+random_file+".fits")
+
+                if self.num_zbins == 1:
+                    random_file = random_file_prefix
+                else:
+                    random_file = random_file_prefix+"_"+str(zbin)
+
+                if os.path.exists(data_dir+random_file+".h5"):
+                    print("loading " + data_dir+random_file+".h5 ...")
+                    randoms = self.load_h5_catalog(data_dir+random_file+".h5")
+                elif os.path.exists(data_dir+random_file+".fits"):
+                    print("loading " + data_dir+random_file+".fits ...")
+                    randoms = FITSCatalog(data_dir+random_file+".fits")
+                else:
+                    raise FileNotFoundError("Could not find survey randoms (.h5 or .fits) catalog:", data_dir+random_file)
             
                 bin_name = "bin"+str(zbin+1)
                 subset_idx = (randoms["Z"] < zbins[bin_name+"_hi"]) & (randoms["Z"] > zbins[bin_name+"_lo"])
                 self.randoms.append(randoms[subset_idx])
 
-                self.I22[idx] = np.sum(self.randoms[idx]['NZ']**1 * self.randoms[idx]['WEIGHT_FKP']**2)
-                print("I_22 for bin {:0.0f} = {:0.2f}".format(idx, self.I22[idx]))
-                idx+= 1
+                self.I22[zbin] = np.sum(self.randoms[zbin]['NZ']**1 * self.randoms[zbin]['WEIGHT_FKP']**2)
+                print("I_22 for bin {:0.0f} = {:0.2f}".format(zbin, self.I22[zbin]))
+
 
     def load_h5_catalog(self, file_path):
         with h5py.File(file_path, "r") as f:
