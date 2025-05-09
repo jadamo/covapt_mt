@@ -73,8 +73,8 @@ class Survey_Geometry_Kernels():
         self.randoms = []
         self.I22 = np.zeros(self.num_zbins)
 
-        # NOTE: There is currently no consensus on whether we need multiple window functions for different 
-        # tracers. The current multi-tracer code assumes you have one window function per redshift bin. So for now,
+        # NOTE: TheCov will have a more robust method for treating the window function for mulatiple tracers. 
+        # The current multi-tracer code assumes you have one window function per redshift bin, which is technically incorrect. For now,
         # we will only load one random catalog per redshift bin, with the intention of investigating how much this
         # choice matters later
         for zbin in range(self.num_zbins):

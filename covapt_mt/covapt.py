@@ -99,7 +99,9 @@ class covariance_model():
             pk_galaxy_raw = pk_data
             # TODO: Come up with more robust way to do this
             if pk_galaxy_raw.shape[1] == self.num_zbins:
-                pk_galaxy_raw = pk_galaxy_raw.transpose(1, 0, 3, 2)
+                pk_galaxy_raw = pk_galaxy_raw.transpose(1, 0, 2, 3)
+            if pk_galaxy_raw.shape[3] == self.num_ells:
+                pk_galaxy_raw = pk_galaxy_raw.transpose(0, 1, 3, 2)
             self.num_spectra = pk_galaxy_raw.shape[1]
 
         print("input power spectrum has shape: " + str(pk_galaxy_raw.shape))
