@@ -77,7 +77,7 @@ class Survey_Geometry_Kernels():
         idx = 0
         for zbin in range(self.num_zbins):
             for ps in range(num_tracers):
-                random_file_stem = random_file_prefix+str(ps)+"_"+str(zbin)
+                random_file_stem = random_file_prefix + "tracer" + str(ps) + "_zbin" + str(zbin)
                 # NOTE: If random_file_stem does not contain a directory path, 
                 # add data_dir (yaml file input_dir) to it, otherwise, use absolute path.
                 # NOTE: This functionality has not been extended to other input files.
