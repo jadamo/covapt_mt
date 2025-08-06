@@ -29,7 +29,7 @@ class Survey_Geometry_Kernels():
             Om0: Present matter density parameter for the catalog cosmology
             zbin: index specifying what redshift bin this random catalog corresponds to
             data_dir: location of survey random catalogs. Default the directory specified in config.py
-        
+
         Raises:
             IOError: If random catalog doesn't exist in the specified directory
         """
@@ -63,10 +63,10 @@ class Survey_Geometry_Kernels():
 
     def load_survey_randoms(self, zbins, num_tracers, data_dir, random_file_prefix=""):
         """Loads random survey catalog from an hdf5 file
-        
+
         Args:
             data_dir: location of survey random catalogs. Default the directory specified in config.py
-        
+
         Raises:
             IOError: If random catalog doesn't exist in the specified directory
         """
@@ -87,11 +87,11 @@ class Survey_Geometry_Kernels():
                     random_file = random_file_stem
                 # TODO: Update to match Henry's file format when he gives you it
                 if not os.path.exists(random_file+".fits") and \
-                not os.path.exists(random_file+".h5"):
+                not os.path.exists(random_file+".hf5"):
                     raise IOError("Could not find survey randoms catalog:", random_file)
-                try:    randoms = self.load_h5_catalog(random_file+".h5")
+                try:    randoms = self.load_h5_catalog(random_file+".hf5")
                 except: randoms = FITSCatalog(random_file+".fits")
-            
+
                 bin_name = "bin"+str(zbin+1)
                 subset_idx = (randoms["Z"] < zbins[bin_name+"_hi"]) & (randoms["Z"] > zbins[bin_name+"_lo"])
                 self.randoms.append(randoms[subset_idx])
@@ -121,22 +121,22 @@ class Survey_Geometry_Kernels():
         position = (transform.SkyToCartesian(dummy_cat["ra"], dummy_cat["dec"], dummy_cat["z"],degrees=True, cosmo=self.cosmo)).compute()
         d = np.sqrt(position[:,0]**2 + position[:,1]**2 + position[:,2]**2)
         dV = np.zeros(len(d)-1)
-        
+
         for i in range(len(dV)):
             dV[i] = 4./3. * np.pi * (d[i+1]**3 - d[i]**3)
         return dV
 
     def calculate_nz(self, randoms):
-        
+
         if "NZ" in randoms.columns: return randoms
 
         if "Z" not in randoms.columns:
             randoms["RA"], randoms["DEC"], randoms["Z"] = transform.CartesianToSky(randoms["OriginalPosition"], self.cosmo)
-        
+
         print("Computing n(z) from input random catalog...")
         nbar, z_edges = np.histogram(randoms["Z"].compute(), bins=100) # Gives N = n*V
         dV_dz = self.get_dVolume_dz(z_edges)
-        
+
         nbar = nbar / dV_dz
         z_centers = np.zeros(len(nbar))
         for i in range(len(z_centers)):
@@ -149,7 +149,7 @@ class Survey_Geometry_Kernels():
 
     def convert_to_distances(self):
         """Converts catalog redshifts to physical distances
-        
+
         To convert to distances this function uses an assumed "catalog" cosmology
         that is specified by the user.
         """
