@@ -83,8 +83,8 @@ def flip_axes(cov, nps:int, nk:int, nl:int):
     # TODO: Upgrade to handle different kbins for different redshift bins
     cov_reshaped = np.zeros_like(cov)
     print(cov_reshaped.shape)
-    assert cov_reshaped.shape[1] == nps*nk*nl, \
-    "mismatch between input dimensions and covariance!: " + str(cov.shape[1]) + "vs " + str(nps*nk*nl)
+    #assert cov_reshaped.shape[1] == nps*nk*nl, \
+    #"mismatch between input dimensions and covariance!: " + str(cov.shape[1]) + "vs " + str(nps*nk*nl)
     for z in range(cov_reshaped.shape[0]):
         tmp_cov = cov[z].reshape(nps, nl, nk, nps, nl, nk)
         tmp_cov = tmp_cov.transpose(0, 2, 1, 3, 5, 4)

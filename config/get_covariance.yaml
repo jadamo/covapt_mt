@@ -27,6 +27,7 @@ Om0 : 0.31
 
 make_Gaussian_cov : True
 k_array_file : "k_emu_test.npz"
+sampoing_mode : "linear" # "linear" or "log"
 pk_galaxy_file : "ps_interp.npy"
 covariance_file : "cov_2_tracer_2_redshift.npz"
 

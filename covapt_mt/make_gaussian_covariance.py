@@ -26,8 +26,9 @@ def make_gaussian_covariance(yaml_file):
     # Reformat to the shape Cosmo_Inference expects
     num_spectra = int(config_dict["num_tracers"]*(config_dict["num_tracers"]+1)/2)
     num_ells = 2
-    C_G_reshaped = flip_axes(C_G, num_spectra, len(model.get_k_bins()[0]), num_ells)
-    print(C_G_reshaped.shape)
+    #C_G_reshaped = flip_axes(C_G, num_spectra, len(model.get_k_bins()[0]), num_ells)
+    #print(C_G_reshaped.shape)
+    C_G_reshaped = C_G
 
     if config_dict["save_inverse"] == True:
         print("Inverting covariance...")

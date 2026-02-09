@@ -23,6 +23,7 @@ def make_window_function(yaml_file):
     k_data = np.load(config_dict["input_dir"]+config_dict["k_array_file"])
     num_zbins = int(len(config_dict["zbins"]) / 2)
     num_tracers = int(config_dict["num_tracers"])
+    sampling_mode = config_dict["sampling_mode"]
     k_centers = []
     for idx in range(num_zbins):
         key = "k"

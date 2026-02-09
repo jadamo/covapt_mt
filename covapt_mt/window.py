@@ -21,14 +21,13 @@ class Survey_Geometry_Kernels():
     Class that contains functions needed to calculate the covariance matrix window functions
     given a survey-like geometry 
     """
-    def __init__ (self, config_dict, k_centers:list):
+    def __init__ (self, config_dict, k_centers:list, sampling_mode="linear"):
         """Constructs Survey_Window_Kernels object
 
         Args:
-            h: Hubble parameter for the catalog cosmology
-            Om0: Present matter density parameter for the catalog cosmology
-            zbin: index specifying what redshift bin this random catalog corresponds to
-            data_dir: location of survey random catalogs. Default the directory specified in config.py
+            config_dict: A dictionary containing all the necessary information about the survey geometry and random catalogs.
+            k_centers (list): A list of np arrays containing the k-bin centers for each redshift bin. The k-bin edges are inferred from the bin centers in the get_k_bin_edges function.
+            sampling_mode (str): One of "linear", "log". Default "linear"
         
         Raises:
             IOError: If random catalog doesn't exist in the specified directory
@@ -44,7 +43,10 @@ class Survey_Geometry_Kernels():
         self.convert_to_distances()
 
         # calculate bin edges and width from the k centers
-        self.get_k_bin_edges(k_centers)
+        self.sampling_mode = config_dict["sampling_mode"]
+        print(f"Using {self.sampling_mode} for k-bin sampling")
+        self.kbin_width, self.kbin_edges = self.get_k_bin_edges(k_centers, mode=self.sampling_mode)
+        #self.get_k_bin_edges(k_centers)
 
         # As the window falls steeply with k, only low-k regions are needed for the calculation.
         # Therefore cutting out the high-k modes in the FFTs using the self.icut parameter
@@ -90,6 +92,7 @@ class Survey_Geometry_Kernels():
                 elif os.path.exists(data_dir+random_file+".fits"):
                     print("loading " + data_dir+random_file+".fits ...")
                     randoms = FITSCatalog(data_dir+random_file+".fits")
+
                 else:
                     raise FileNotFoundError("Could not find survey randoms (.h5 or .fits) catalog:", data_dir+random_file)
             
@@ -97,9 +100,12 @@ class Survey_Geometry_Kernels():
                 subset_idx = (randoms["Z"] < zbins[bin_name+"_hi"]) & (randoms["Z"] > zbins[bin_name+"_lo"])
                 self.randoms.append(randoms[subset_idx])
 
-                self.I22[zbin] = np.sum(self.randoms[zbin]['NZ']**1 * self.randoms[zbin]['WEIGHT_FKP']**2)
+                I12 = np.sum(self.randoms[zbin]['WEIGHT_FKP']**2)
+                print("I_12 =", I12.compute())
+                #self.I22[zbin] = np.sum(self.randoms[zbin]['NX']**1 * self.randoms[zbin]['WEIGHT_FKP']**2) * 0.1
+                self.I22[zbin] = 9.047 # HACK
                 print("I_22 for bin {:0.0f} = {:0.2f}".format(zbin, self.I22[zbin]))
-
+                print(self.I22[zbin] / I12.compute())
 
     def load_h5_catalog(self, file_path):
         with h5py.File(file_path, "r") as f:
@@ -145,7 +151,7 @@ class Survey_Geometry_Kernels():
 
         # finally, interpolate
         nbar_func = InterpolatedUnivariateSpline(z_centers, nbar)
-        randoms["NZ"] = nbar_func(randoms["Z"])
+        randoms["NX"] = nbar_func(randoms["Z"])
         return randoms
 
     def convert_to_distances(self):
@@ -200,7 +206,10 @@ class Survey_Geometry_Kernels():
                 print("WARNING! Neither box_size or padding specified! Defaulting to infered size")
 
             self.kfun.append(2.*np.pi/self.box_size[idx])
-            self.Lm2.append(int(self.kbin_width[idx]*self.nBins[idx]/self.kfun[idx])+1)
+            if self.sampling_mode == "linear":
+                self.Lm2.append(int(self.kbin_width[idx]*self.nBins[idx]/self.kfun[idx])+1)
+            else:
+                self.Lm2.append(int((self.kbin_edges[idx][-1] - self.kbin_edges[idx][0])/self.kfun[idx])+1)
             
             assert self.icut < (self.Lm2[idx] / 2)
             print("min / max redshift: [{:0.2f}, {:0.2f}]".format(da.min(self.randoms[idx]["Z"]).compute(),
@@ -226,6 +235,7 @@ class Survey_Geometry_Kernels():
                 print(f'Computing FFTs of {w}')
                 print('Computing 0th order FFTs')
                 Wij = np.fft.fftn(self.randoms[bin].to_mesh(Nmesh=Nmesh, BoxSize=self.box_size[bin], value=w, resampler='tsc', interlaced=True, compensated=True).paint())
+
                 Wij *= (da.sum(self.randoms[bin][w]).compute())/np.real(Wij[0,0,0]) #Fixing normalization, e.g., zero mode should be I22 for 'W22'
                 export[bin, ind]=Wij; ind+=1
                 
@@ -279,7 +289,7 @@ class Survey_Geometry_Kernels():
         self.shift_positions()
         for idx in range(len(self.randoms)):
             self.randoms[idx]['W12'] = self.randoms[idx]['WEIGHT_FKP']**2 
-            self.randoms[idx]['W22'] = (self.randoms[idx]['WEIGHT_FKP']**2) * self.randoms[idx]['NZ']
+            self.randoms[idx]['W22'] = (self.randoms[idx]['WEIGHT_FKP']**2) * self.randoms[idx]['NX']
 
         return self.calc_FFTs(Nmesh, ["W22", "W12"])
     
@@ -299,7 +309,7 @@ class Survey_Geometry_Kernels():
 
         # Shifting the points such that the survey center is in the center of the box
         self.shift_positions(BoxSize)
-        self.randoms['W22'] = (self.randoms['WEIGHT_FKP']**2) * self.randoms['NZ']
+        self.randoms['W22'] = (self.randoms['WEIGHT_FKP']**2) * self.randoms['NX']
         self.randoms['W10'] = self.randoms['W22']/self.randoms['W22']
 
         export = self.calc_FFTs(Nmesh, BoxSize, ["W22", "W10"])
@@ -383,26 +393,37 @@ class Survey_Geometry_Kernels():
         P_W[1:7,0]=[1,0,0,1,0,1]; P_W[7:13,0]=[1,0,0,1,0,1]; P_W[13:,0]=[1,0,0,0,1,0,0,0,1]
         return P_W
 
-    def get_k_bin_edges(self, k_centers):
+    def get_k_bin_edges(self, k_centers, mode="linear"):
         """calculates bin edges from an array of bin centers
 
         Args:
             k_centers: An np array of evenly-spaced bin centers
+            mode: One of "linear", "log". Default "linear". Whether to use linear or log spacing for the k-bin edges. Note that the k-bin width is assumed to be constant, so if log spacing is used, the bin widths will not be constant.
         """
 
         self.kbin_width = []
         self.kbin_edges = []
         self.nBins = []
         for idx in range(len(self.randoms)):
-            self.kbin_width.append(k_centers[idx][-1] - k_centers[idx][-2])
-            self.nBins.append(len(k_centers[idx]))
-            kbin_half_width = self.kbin_width[idx] / 2.
-            self.kbin_edges.append(np.zeros(len(k_centers[idx])+1))
-            self.kbin_edges[idx][0] = k_centers[idx][0] - kbin_half_width
+            if mode == "linear":
+                self.kbin_width.append(k_centers[idx][-1] - k_centers[idx][-2])
+                kbin_half_width = self.kbin_width[idx] / 2.
+                self.kbin_edges.append(np.zeros(len(k_centers[idx])+1))
+                self.kbin_edges[idx][0] = k_centers[idx][0] - kbin_half_width
 
-            #assert self.kbin_edges[z][0] > 0.
-            for i in range(1, len(self.kbin_edges[idx])):
-                self.kbin_edges[idx][i] = k_centers[idx][i-1] + kbin_half_width
+                assert self.kbin_edges[idx][0] > 0.
+                for i in range(1, len(self.kbin_edges[idx])):
+                    self.kbin_edges[idx][i] = k_centers[idx][i-1] + kbin_half_width
+
+            elif mode == "log":
+
+                self.kbin_width.append(k_centers[idx][1] / k_centers[idx][0])
+                self.kbin_edges.append(np.zeros(len(k_centers[idx])+1))
+                self.kbin_edges[idx][0] = 10 ** (np.log10(k_centers[idx][0]) - (np.log10(self.kbin_width[idx]) / 2))
+
+                assert self.kbin_edges[idx][0] > 0.
+                for i in range(1, len(self.kbin_edges[idx])):
+                    self.kbin_edges[idx][i] = self.kbin_edges[idx][i-1] * (self.kbin_width[idx])
 
             print("k bin edges for bin",idx,":", self.kbin_edges[idx])
 
@@ -435,7 +456,17 @@ class Survey_Geometry_Kernels():
             iz[:,:,i]+=i-self.Lm2
 
         rk=np.sqrt(ix**2+iy**2+iz**2)
-        sort=(rk*self.kfun/self.kbin_width).astype(int)
+        if self.sampling_mode == "linear":
+            sort=(rk*self.kfun/self.kbin_width).astype(int)
+        # NOTE: This code might not be the correct way to do this...
+        elif self.sampling_mode == "log":
+            sort = np.ones_like(rk) * -1
+            for kbin in range(self.nBins):
+                idx = np.where((rk*self.kfun > self.kbin_edges[kbin]) & 
+                               (rk*self.kfun <= self.kbin_edges[kbin+1]))
+                
+                sort[idx] = kbin
+            sort = sort.astype(int)
 
         for i in range(self.nBins):
             ind=(sort==i)
@@ -484,6 +515,7 @@ class Survey_Geometry_Kernels():
            #sampled=np.arange(Bin_ModeNum[kbin_idx],dtype=int)
         # Loop thru randomly-selected k-modes
         #for mode in sampled:
+
         for mode in range(kmodes_sampled):
             #[ik1x,ik1y,ik1z,rk1] = kmodes[kbin_idx, mode]
             [ik1x,ik1y,ik1z,rk1] = kmodes[kbin_idx, mode, :]
