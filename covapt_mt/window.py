@@ -45,8 +45,7 @@ class Survey_Geometry_Kernels():
         # calculate bin edges and width from the k centers
         self.sampling_mode = config_dict["sampling_mode"]
         print(f"Using {self.sampling_mode} for k-bin sampling")
-        self.kbin_width, self.kbin_edges = self.get_k_bin_edges(k_centers, mode=self.sampling_mode)
-        #self.get_k_bin_edges(k_centers)
+        self.get_k_bin_edges(k_centers, mode=self.sampling_mode)
 
         # As the window falls steeply with k, only low-k regions are needed for the calculation.
         # Therefore cutting out the high-k modes in the FFTs using the self.icut parameter
