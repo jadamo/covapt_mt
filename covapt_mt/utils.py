@@ -50,6 +50,9 @@ def sample_from_shell(rmin : float, rmax : float, discrete=True):
     if(discrete):
         x,y,z = int(np.round(x)), int(np.round(y)), int(np.round(z))
         r = np.sqrt(x**2 + y**2 + z**2)
+        # print("r = ", r)
+        # print("rmin = ", rmin)
+        # print("rmax = ", rmax)
         if(r < rmin or r > rmax):
             return sample_from_shell(rmin, rmax, discrete)
 
@@ -112,17 +115,21 @@ def test_matrix(cov: list, num_spectra: int, num_kbins : list):
 
         # test if partial matrices are positive-definite
         sub_test = 0
-        for i in range(int(num_spectra)):
-            for j in range(int(num_spectra)):
-                C_sub = cov[z][i*3*int(num_kbins[z]): (i+1)*3*int(num_kbins[z]),j*3*int(num_kbins[z]): int((j+1)*3*num_kbins[z])]
-                try:
-                    L = np.linalg.cholesky(C_sub)
-                    #print("Partial covariance matrix ({:0.0f}, {:0.0f}) is positive-definite :)".format(i, j))
-                except:
-                    print("Partial covariance matrix ({:0.0f}, {:0.0f}, {:0.0f}) is NOT positive-definite".format(z, i, j))
-                    sub_test = 1
+        if num_spectra > 1:
+            for i in range(int(num_spectra)):
+                for j in range(int(num_spectra)):
+                    C_sub = cov[z][i*3*int(num_kbins[z]): (i+1)*3*int(num_kbins[z]),j*3*int(num_kbins[z]): int((j+1)*3*num_kbins[z])]
+                    try:
+                        L = np.linalg.cholesky(C_sub)
+                        #print("Partial covariance matrix ({:0.0f}, {:0.0f}) is positive-definite :)".format(i, j))
+                    except:
+                        print("Partial covariance matrix ({:0.0f}, {:0.0f}, {:0.0f}) is NOT positive-definite".format(z, i, j))
+                        sub_test = 1
 
-        if sub_test == 0: print("All sub-matrices are positive-definite :)")
+            if sub_test == 0: print("All sub-matrices are positive-definite :)")
 
-        cond = np.linalg.cond(cov[z])
-        print("Condition number = {:0.3e}".format(cond))
+        try:
+            cond = np.linalg.cond(cov[z])
+            print("Condition number = {:0.3e}".format(cond))
+        except:
+            print("WARNING! Could not compute condition number for zbin " + str(z))

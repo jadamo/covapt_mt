@@ -30,7 +30,7 @@ def make_gaussian_covariance(yaml_file):
     #print(C_G_reshaped.shape)
     C_G_reshaped = C_G
 
-    if config_dict["save_inverse"] == True:
+    if "save_inverse" in config_dict and  config_dict["save_inverse"] == True:
         print("Inverting covariance...")
         for z in range(model.num_zbins):
             C_G_reshaped[z] = np.linalg.inv(C_G_reshaped[z])

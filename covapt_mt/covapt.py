@@ -33,7 +33,7 @@ class covariance_model():
         """
         self.num_tracers = num_tracers
         self.num_zbins = num_zbins
-        self.num_ells = 3 # TODO: find better way to specify num_ells
+        self.num_ells = 2 # TODO: find better way to specify num_ells
         self.set_k_bins(k_array_file)
         self.set_number_densities(alpha)
         self._load_G_window_functions(window_dir)
@@ -115,7 +115,7 @@ class covariance_model():
                 if i > j: continue
                 pk_galaxy[i, j, 0, :] = pk_galaxy_raw[z, idx, 0, :]
                 pk_galaxy[i, j, 2, :] = pk_galaxy_raw[z, idx, 1, :]
-                pk_galaxy[i, j, 4, :] = pk_galaxy_raw[z, idx, 2, :]
+                #pk_galaxy[i, j, 4, :] = pk_galaxy_raw[z, idx, 2, :]
                 # if i != j:
                 #     pk_galaxy[j, i, 0, :] = pk_galaxy_raw[z, idx, 0, :]
                 #     pk_galaxy[j, i, 2, :] = pk_galaxy_raw[z, idx, 1, :]
@@ -406,11 +406,11 @@ class covariance_model():
 
                                 covMat[n_AB*self.num_ells*blk_size+k, n_CD*self.num_ells*blk_size+k+dk]                         = cov_sub[0]
                                 covMat[n_AB*self.num_ells*blk_size+blk_size+k, n_CD*self.num_ells*blk_size+blk_size+k+dk]       = cov_sub[1]
-                                covMat[n_AB*3*blk_size+2*blk_size+k, n_CD*3*blk_size+(2*blk_size)+k+dk] = cov_sub[2]
+                                #covMat[n_AB*3*blk_size+2*blk_size+k, n_CD*3*blk_size+(2*blk_size)+k+dk] = cov_sub[2]
                                 covMat[n_AB*self.num_ells*blk_size+blk_size+k, n_CD*self.num_ells*blk_size+k+dk]                = cov_sub[3]
                                 covMat[n_AB*self.num_ells*blk_size+k, n_CD*self.num_ells*blk_size+blk_size+k+dk]                = cov_sub[3]
-                                covMat[n_AB*3*blk_size+2*blk_size+k, n_CD*3*blk_size+k+dk]              = cov_sub[4]
-                                covMat[n_AB*3*blk_size+2*blk_size+k, n_CD*3*blk_size+blk_size+k+dk]      = cov_sub[5]
+                                #covMat[n_AB*3*blk_size+2*blk_size+k, n_CD*3*blk_size+k+dk]              = cov_sub[4]
+                                #covMat[n_AB*3*blk_size+2*blk_size+k, n_CD*3*blk_size+blk_size+k+dk]      = cov_sub[5]
                         #covMat[n_AB*2*num_kbins:n_AB*2*num_kbins+num_kbins,n_CD*2*num_kbins+num_kbins:n_CD*2*num_kbins+num_kbins*2]=np.transpose(covMat[num_kbins:num_kbins*2,:num_kbins])
             
             covMat_all.append((covMat+np.transpose(covMat))/2.)
