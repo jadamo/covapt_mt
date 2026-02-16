@@ -19,6 +19,9 @@ def make_gaussian_covariance(yaml_file):
                              window_dir=config_dict["output_dir"])
     model.load_power_spectrum(config_dict["input_dir"] + config_dict["pk_galaxy_file"])
     C_G = model.get_mt_gaussian_covariance()
+    #C_NG = model.get_no
+
+    print("C_G shape = ", np.array(C_G).shape)
 
     # test if matrix (and all sub-matrices) is positive definite
     test_matrix(C_G, model.num_spectra, model.num_kbins)
@@ -26,9 +29,9 @@ def make_gaussian_covariance(yaml_file):
     # Reformat to the shape Cosmo_Inference expects
     num_spectra = int(config_dict["num_tracers"]*(config_dict["num_tracers"]+1)/2)
     num_ells = 2
-    #C_G_reshaped = flip_axes(C_G, num_spectra, len(model.get_k_bins()[0]), num_ells)
-    #print(C_G_reshaped.shape)
-    C_G_reshaped = C_G
+    C_G_reshaped = flip_axes(C_G, num_spectra, len(model.get_k_bins()[0]), num_ells)
+    print("reshaped = ", C_G_reshaped.shape)
+    # C_G_reshaped = C_G
 
     if "save_inverse" in config_dict and  config_dict["save_inverse"] == True:
         print("Inverting covariance...")
@@ -37,7 +40,7 @@ def make_gaussian_covariance(yaml_file):
         save_file = config_dict["output_dir"] + "invcov.npy"
 
     else:
-        save_file = config_dict["output_dir"] + "cov.npy"
+        save_file = config_dict["output_dir"] + "cov_hybridLinear_Lm2430_edgeBasedAll.npy"
 
     print("Saving to " + save_file)
     np.save(save_file, C_G_reshaped)

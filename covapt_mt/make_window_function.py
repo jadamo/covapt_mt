@@ -28,6 +28,7 @@ def make_window_function(yaml_file):
     for idx in range(num_zbins):
         key = "k"
         k_centers.append(k_data[key])# / 0.7)
+    print("k centers in make window = ", k_centers)
 
     survey_kernels = window.Survey_Geometry_Kernels(config_dict, k_centers)
     
@@ -49,9 +50,13 @@ def make_window_function(yaml_file):
         # TODO: find a faster way to loop thru redshift bins
         # For now, save the window functions in seperate files
         for idx in range(num_zbins):
+            print("k centers shape = ", np.array(k_centers).shape)
             print("Sampling {:0.0f} kmodes for bin {:0.0f} with {:0.0f} processes...".format(config_dict["kmodes_sampled"], idx, config_dict["num_processes"]))
             #Wij = np.zeros((len(k_centers[z_idx]), 7, 15, 6))
+            print("kcenter when making window = ", k_centers[idx])
             k_idx = range(len(k_centers[idx]))
+
+            print("k index = ", k_idx)
 
             survey_kernels.load_fft_file(config_dict["output_dir"], idx)
             #for tqdm(range(len(k_centers[z_idx])), desc='Computing window kernels'):
@@ -68,14 +73,14 @@ def make_window_function(yaml_file):
         print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
 
     if config_dict["make_ssc_window"]:
-        print("WARNING! This functionality does not work right now!")
-        raise NotImplementedError
-        # print("\nStarting FFT calculations...")
-        # t1 = time.time()
-        # P_W = survey_kernels.calc_SSC_window_function(config_dict["fft_mesh_size"], config_dict["box_size"])
-        # t2 = time.time()
-        # print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
+        # print("WARNING! This functionality does not work right now!")
+        # raise NotImplementedError
+        print("\nStarting FFT calculations...")
+        t1 = time.time()
+        P_W = survey_kernels.calc_SSC_window_function(config_dict["fft_mesh_size"])#, config_dict["box_size"])
+        t2 = time.time()
+        print('Done! Run time: {:.0f}m {:.0f}s'.format((t2-t1) // 60, (t2-t1) % 60))
 
-        # save_file = config_dict["output_dir"]+'WindowPowers.npy'
-        # np.save(save_file,P_W)
-        # print("SSC window functions saved to", save_file)
+        save_file = config_dict["output_dir"]+'WindowPowers.npy'
+        np.save(save_file,P_W)
+        print("SSC window functions saved to", save_file)
