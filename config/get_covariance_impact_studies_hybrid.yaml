@@ -2,22 +2,22 @@ input_dir : "/Users/anniemoore/Documents/spherexVirtual/covariance_code/covapt_m
 output_dir : "/Users/anniemoore/Documents/spherexVirtual/covariance_code/covapt_mt/data/output_data/impact_studies/"
 
 # parameters for producing the window function
-make_gaussian_window : False
-make_ssc_window : True # <- currently not configured for multi-tracer!
+make_gaussian_window : True
+make_ssc_window : False # <- currently not configured for multi-tracer!
 make_random_ffts: False
-random_file_prefix : random_zbin6_sample4
+random_file_prefix : random_flipnz_2_0
 #random_file_prefix : "boss_data/random0_DR12v5_CMASS_North"
 # window_file_prefix : "Wij_"
 window_file_prefix : "Wij0_"
 fft_mesh_size : 128
 # Amount to pad the box size by (multiplicitave)
 # OR specify the box size directly
-box_padding : 1.1
-# box_size : 5377 # Mpc/h
+# box_padding : 1.2
+box_size : 6000 # Mpc/h
 # number of kmodes to sample
 # The default used by Jay Wadekar was 25000, which was run on a cluster
-kmodes_sampled : 1000
-num_processes : 4
+kmodes_sampled : 100
+num_processes : 1
 num_tracers : 1
 zbins:
   bin1_lo : 1.0
@@ -28,11 +28,12 @@ Om0 : 0.31
 
 make_Gaussian_cov : True
 # k_array_file : "k_impact.npz"
-k_array_file : "k_hubble_true_log_18Bin_l0_2_4.npz"
+k_array_file : "k_hybrid_log.npz"
 # k_array_file : "lin_karray.npz"
-sampling_mode : "log" # "linear" or "log" or "hybrid"
+sampling_mode : "log" # "linear" or "log"
 # pk_galaxy_file :  "ps_1loop_hubble_true_link_galaxy_ps copy.npy"
-pk_galaxy_file : "ps_1loop_hubble_true_logk_18Bins_l0_2_wPshot_galaxy_ps2.npy"
+# pk_galaxy_file : "ps_1loop_khybridUpdated_galaxy_ps.npy"
+pk_galaxy_file : "ps_1loop_hybridLog_galaxy_ps.npy"
 # pk_galaxy_file : "ps_1loop_galaxy_ps_1z.npy"
 covariance_file : "cov_1_tracer_1_redshift_log.npz"
 

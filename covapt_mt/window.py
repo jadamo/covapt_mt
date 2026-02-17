@@ -225,15 +225,15 @@ class Survey_Geometry_Kernels():
             # print("k func = ", self.kfun)
             # print("bin edges = ", self.kbin_edges)
             if self.sampling_mode == "linear":
-                self.Lm2.append(430)#append(int(self.kbin_width[idx]*self.nBins[idx]/self.kfun[idx])+1)
+                self.Lm2.append(int(self.kbin_width[idx]*self.nBins[idx]/self.kfun[idx])+1)
                 print("self Lm2 = ", self.Lm2)
                 print("kbin width = ", self.kbin_width[idx])
             elif self.sampling_mode == 'log':
-                self.Lm2.append(int((self.kbin_edges[idx][-1] - self.kbin_edges[idx][0])/self.kfun[idx])+1)
+                self.Lm2.append(int((self.kbin_edges[idx][-1])/self.kfun[idx])+1)
                 print("self Lm2 when calculated = ", self.Lm2)
             elif self.sampling_mode == 'hybrid':
                 # log_index = np.where()
-                self.Lm2.append(int(np.ceil(np.max(self.kbin_edges[idx]) / self.kfun[idx])) + 1)
+                self.Lm2.append(39)#int(np.ceil(np.max(self.kbin_edges[idx]) / self.kfun[idx])) + 1)
                 # self.Lm2.append(int(self.kbin_width[idx][0]*self.nBins[idx]/self.kfun[idx])+1)
                 # self.Lm2.append(int((self.kbin_edges[idx][-1] - self.kbin_edges[idx][6])/self.kfun[idx])+1)
                 print("self Lm2 when calculated = ", self.Lm2)
@@ -474,7 +474,7 @@ class Survey_Geometry_Kernels():
 
                 print("k centers lin = ", k_centers_lin)
 
-                kbin_width_lin.append(k_centers_lin[-1] - k_centers_lin[-2])
+                kbin_width_lin.append(k_centers_lin[1] - k_centers_lin[0])
                 kbin_half_width = kbin_width_lin[idx] / 2.
                 kbin_edges_lin.append(np.zeros(len(k_centers_lin)+1))
                 kbin_edges_lin[idx][0] = k_centers_lin[0] - kbin_half_width
@@ -495,7 +495,8 @@ class Survey_Geometry_Kernels():
                 kbin_edges_log.append(np.zeros(len(k_centers[idx][log_idx])+1))
                 # kbin_edges_log[idx][0] = 10 ** (np.log10(k_centers_log[idx][0]) - (np.log10(kbin_width_log) / 2))
                 # kbin_edges_log[idx][0] = 10 ** (np.log10(k_centers_log[0]) - (np.log10(kbin_width_log[idx]) / 2))
-                kbin_edges_log[idx][0] = k_centers_log[0] - kbin_half_width
+                kbin_edges_log[idx][0] = kbin_edges_lin[idx][-1]
+                # self.kbin_edges[idx][0] = 10 ** (np.log10(k_centers[idx][0]) - (np.log10(self.kbin_width[idx]) / 2))
 
                 # assert kbin_edges_log[0] > 0.
                 # for i in range(1, len(kbin_edges_log)):
@@ -511,7 +512,7 @@ class Survey_Geometry_Kernels():
                 # kbin_edges_total = np.concatenate([kbin_edges_lin,kbin_edges_log])
                 # self.kbin_edges.append(kbin_edges_total)
 
-                kbin_edges_total = [*kbin_edges_lin[idx],*kbin_edges_log[idx][1:]]
+                kbin_edges_total = np.array([*kbin_edges_lin[idx],*kbin_edges_log[idx][1:]])
                 self.kbin_edges.append(kbin_edges_total)
 
                 print(len(self.kbin_edges[idx]))
@@ -526,6 +527,8 @@ class Survey_Geometry_Kernels():
 
             self.nBins.append(len(k_centers[idx]))
             print(f"k bin edges for bin {idx} has : {self.nBins[idx]} bins: {self.kbin_edges[idx]}")
+            print(f"Type of kbin_edges: {type(self.kbin_edges[0])}")
+            print(f"Type of kbin_width: {type(self.kbin_width[0])}")
 
     def fft(self, temp):
         """Does some shifting of the fft arrays"""
@@ -547,6 +550,7 @@ class Survey_Geometry_Kernels():
         """
 
         Lm2 = self.Lm2[bin_idx]
+        print("Lm2 in shell modes =  ", Lm2)
         [ix,iy,iz] = np.zeros((3,2*Lm2+1,2*Lm2+1,2*Lm2+1))
         Bin_kmodes=[]
         Bin_ModeNum=np.zeros(self.nBins[bin_idx],dtype=int)
@@ -559,13 +563,11 @@ class Survey_Geometry_Kernels():
 
         rk=np.sqrt(ix**2+iy**2+iz**2)
         if self.sampling_mode == "linear":
-            # sort=(rk*self.kfun[bin_idx]/self.kbin_width[bin_idx]).astype(int)
+            # sort=((rk*self.kfun[bin_idx]-self.kbin_edges[bin_idx][0])/self.kbin_width[bin_idx]).astype(int)
             sort = np.ones_like(rk) * -1
-            # print("n bins = ", self.nBins)
-            # print("n bins for redshift = ", self.nBins[bin_idx])
             for kbin in range(self.nBins[bin_idx]):
-                idx = np.where((rk*self.kfun[bin_idx] > self.kbin_edges[bin_idx][kbin]) & 
-                               (rk*self.kfun[bin_idx] <= self.kbin_edges[bin_idx][kbin+1]))
+                idx = np.where((rk*self.kfun[bin_idx] >= self.kbin_edges[bin_idx][kbin]) & 
+                               (rk*self.kfun[bin_idx] < self.kbin_edges[bin_idx][kbin+1]))
                 sort[idx] = kbin
 
             sort = sort.astype(int)
@@ -574,8 +576,8 @@ class Survey_Geometry_Kernels():
         elif self.sampling_mode == "log":
             sort = np.ones_like(rk) * -1
             for kbin in range(self.nBins[bin_idx]):
-                idx = np.where((rk*self.kfun[bin_idx] > self.kbin_edges[bin_idx][kbin]) & 
-                               (rk*self.kfun[bin_idx] <= self.kbin_edges[bin_idx][kbin+1]))
+                idx = np.where((rk*self.kfun[bin_idx] >= self.kbin_edges[bin_idx][kbin]) & 
+                               (rk*self.kfun[bin_idx] < self.kbin_edges[bin_idx][kbin+1]))
                 sort[idx] = kbin
 
             sort = sort.astype(int)
@@ -583,8 +585,8 @@ class Survey_Geometry_Kernels():
         elif self.sampling_mode == 'hybrid':
             sort = np.ones_like(rk) * -1
             for kbin in range(self.nBins[bin_idx]):
-                idx = np.where((rk*self.kfun[bin_idx] > self.kbin_edges[bin_idx][kbin]) & 
-                            (rk*self.kfun[bin_idx] <= self.kbin_edges[bin_idx][kbin+1]))
+                idx = np.where((rk*self.kfun[bin_idx] >= self.kbin_edges[bin_idx][kbin]) & 
+                            (rk*self.kfun[bin_idx] < self.kbin_edges[bin_idx][kbin+1]))
                 sort[idx] = kbin
             
             sort = sort.astype(int)
@@ -593,11 +595,12 @@ class Survey_Geometry_Kernels():
             ind=(sort==i)
             # print("ind in loop after sample = ",len(ix[ind]))
             Bin_ModeNum[i]=len(ix[ind])
-            print("Bin mode num = ", Bin_ModeNum)
+            # print("Bin mode num = ", Bin_ModeNum)
             Bin_kmodes[i]=np.hstack((ix[ind].reshape(-1,1),iy[ind].reshape(-1,1),iz[ind].reshape(-1,1),rk[ind].reshape(-1,1)))
         
         assert np.all(Bin_ModeNum != 0), "ERROR! some bins have 0 k modes! Your box-size or kbin-width is probably too small"
-        
+        print(f"Sampling mode: {self.sampling_mode}")
+        print(f"Nmodes[0:6]: {Bin_ModeNum[0:min(6, len(Bin_ModeNum))]}")
         return Bin_kmodes, Bin_ModeNum
     
     def ell_factor(self, l1, l2):
@@ -632,7 +635,7 @@ class Survey_Geometry_Kernels():
         #kmodes = np.array([[sample_from_shell(kmin/self.kfun[bin_idx], kmax/self.kfun[bin_idx]) for _ in range(
         #                    kmodes_sampled)] for kmin, kmax in zip(self.kbin_edges[bin_idx][:-1], self.kbin_edges[bin_idx][1:])])
         #Nmodes = nmodes(self.box_size[bin_idx]**3, self.kbin_edges[bin_idx][:-1], self.kbin_edges[bin_idx][1:])
-
+        np.random.seed(42)
         if (kmodes_sampled<Nmodes[kbin_idx]):
            norm = kmodes_sampled
            sampled=(np.random.rand(kmodes_sampled)*Nmodes[kbin_idx]).astype(int)
@@ -641,6 +644,9 @@ class Survey_Geometry_Kernels():
            sampled=np.arange(Nmodes[kbin_idx],dtype=int)
         # Loop thru randomly-selected k-modes
         #for mode in sampled:
+
+        print(f"kbin {kbin_idx}: norm={norm}, I22={self.I22[zbin_idx]:.6f}")
+        print(f"Nmodes for this bin: {Nmodes[kbin_idx]}")
 
         for n in sampled:
             [ik1x,ik1y,ik1z,rk1]=kmodes[kbin_idx][n]
@@ -664,10 +670,8 @@ class Survey_Geometry_Kernels():
 
             rk2=np.sqrt(k2xh**2+k2yh**2+k2zh**2)
             if self.sampling_mode == "linear":
-                # sort=(rk2*self.kfun/self.kbin_width).astype(int)-kbin_idx # to decide later which shell the k2 mode belongs to
+                # sort=((rk2*self.kfun - self.kbin_edges[zbin_idx][0])/self.kbin_width).astype(int)-kbin_idx # to decide later which shell the k2 mode belongs to
                 sort = np.ones_like(rk2) * -1
-                # print(len(sort))
-                # print(sort.shape)
                 for kbin in range(self.nBins[zbin_idx]):
                     idx = np.where((rk2*self.kfun[zbin_idx] >= self.kbin_edges[zbin_idx][kbin]) & 
                                 (rk2*self.kfun[zbin_idx] < self.kbin_edges[zbin_idx][kbin+1]))
